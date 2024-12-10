@@ -1,0 +1,178 @@
+---
+title: 'Remote Sensing Lab 11: Accuracy assessment - sampling validation points'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2023Fall/Class10_Classification/Lab10Materials"
+setwd(wd)
+library(knitr) 
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+
+
+## Goals
+1. To learn graphical approaches to assess class separability for land cover classification.
+2. To learn methods for unsupervised and supervised image classification and their implementation in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+Note: this is an update of the previous lab that includes a section on accuracy and change assessment.
+
+This lab assumes that some of the procedures learned in previous labs for downloading and pre-processing satellite images in R as well as deriving band transformations and spectral indices are already mastered and therefore are not covered here. Please refer to previous labs to implement such previous steps.
+
+1. Open R Studio and then a new R script. Copy and paste each chunk of the code below in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+2.	Answer the questions in the answer sheet and submit your along with the required files to canvas.
+
+Have fun!
+
+#### 1. Load required libraries and set working directory. Use the function install.packages("") to install any unavailable libraries
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(terra)
+library(RColorBrewer)
+
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2023Fall/Class10_Classification/Lab10Materials"
+#wd="/Users/tug61163/Downloads/OneDrive_1_10-10-2023"
+setwd(wd)
+dir()
+```
+
+#### 2. Open the classified image that you produced in the previous lab. T
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+classified=rast("rfpred.tif")
+plot(classified)
+```
+
+Let's change the color palette to improve visualization
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+levels(classified)
+display.brewer.all()
+display.brewer.pal(12, "Paired")
+classcolors= c(brewer.pal(n = 12, name = "Paired"),"gray")
+plot(classified, col=classcolors)
+```
+
+####  3. Produce validation points
+As a random sample
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sampRand=spatSample(classified, method="random", size=13*30, as.points=TRUE,) # 13 classes by 30 pixels to be sampled per class
+length(sampRand$class) # number of total sampling points produced for this class. 
+table(as.data.frame(sampRand)) # sampled points per class
+plot(classified, col=classcolors)
+plot(sampRand, add=T)
+```
+
+As a stratified sample
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sampStrat=spatSample(classified, method="stratified", size=30, as.points=TRUE,) # 13 classes by 30 pixels to be sampled per class
+length(sampStrat$class) # number of total sampling points produced for this class. 
+table(as.data.frame(sampStrat)) # sampled points per class
+plot(classified, col=classcolors)
+plot(sampStrat, add=T)
+```
+
+
+#### 4. Save the points as a shape file.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeVector(sampStrat, filename="sampStrat", filetype= "ESRI Shapefile")
+```
+
+#### 5. Collect validation data
+Open the file in QGIS and follow the instructions in class to collect validation data. Once finished, save the file and close it.
+
+
+#### 6. Produce accuracy assessment
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#  Load function for plotting accuracy results
+AccuPlot <- structure(function #Plot users and producers accuracy 
+### This function plots users and producers accuracy based on the
+### results of a confusion matrix obtained through the application of
+### the function caret::confusionMatrix.
+                       ##details<< Location: location of the
+                       ##legend. Options:"bottomright", "bottom",
+                       ##"bottomleft","left", "topleft", "top",
+                       ##"topright", "right" "center"
+(
+    conmatrix, ##<<\code{}. 
+    location="top" ##<<\code{}. 
+){
+    ## require(stringr)
+  colsum=colSums(supervised$validation$performance$table)
+  rowsum=rowSums(supervised$validation$performance$table)
+  diagonal=diag(supervised$validation$performance$table)
+  producers=round(diagonal/colsum, digits=3)
+  users=round(diagonal/rowsum, digits=3)
+  overall=sum(diagonal)/sum(colsum)
+  classnames=names(users)
+  par(mar = c(7, 4, 2, 2) + 0.2)
+  barplot(rbind(users,producers),col=c("aquamarine3","coral"), 
+          names.arg=classnames,  beside = TRUE, ylab= "accuracy (%)", las=2, cex.names=0.7)
+  legend(location, legend=c("Users", "Producers"), box.lty=0, bg= "transparent",
+         col=c("aquamarine3","coral"), lty=1:2, cex=0.8)
+  # as.numeric(levels(aRnStats[[4]][,2]))
+  #
+  #plot(accuplot)
+  classaccuracy=data.frame(cbind(as.numeric(users), as.numeric(producers)), 
+                           stringsAsFactors=FALSE)
+  # I have to do this twice otherwise data.frame converts numbers into factors.
+  classaccuracy=cbind(classnames, classaccuracy, stringsAsFactors=FALSE)
+  names(classaccuracy)=c("class name", "users", "producers")
+  return(list(overall, classaccuracy))
+### \code{}... 
+} , ex=function(){
+    tarFiles <- c('LT050070651987081201T1-SC20181031175314.tar.gz',
+                  'LT050060661988072201T1-SC20181031160603.tar.gz')
+    tarPaths <- system.file(tarFiles, package = 'aRn')
+    stack <- EEstackWithoutMeta(tarPaths, c(1:4))
+    strips <- RasterIntersection(stack)
+    ## thrs <- thresraster(strips[[2L]], strips[[1L]])
+    ## noch <- nochg(thrs, degfree = nlayers(strips[[2L]]) - 1, pvalue = 4E-1)
+    ## calp <- calibrationParameters(strips[[2L]], strips[[1L]], noch, nbrackets = 8)
+    ## model <- PIFmodel(strips, pvalue = 4E-1, brackets = 8)
+    ## calib <- CalibrateRaster(model, stack)
+    ## merged <- merge(calib, stack[[2L]][[names(calib)]])
+    ## plotRGB(merged, r = 3, g = 2, b = 1, stretch = 'lin')
+})
+
+# Use the uploaded function to plot accuracy results
+AccuPlot(supervised$validation$performance)
+```
+
+13. Perform change assessment. This requires to produce a classification from an earlier image following the different pre-processing and classification steps learned throughout the course. We will call the earlier image "supervised_first".
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+supervised_first=raster("classTAR_imist_iter_3.tif")
+supervised_first=crop(supervised_first, extent(supervised_last))
+chgMat=crosstab(supervised_first, supervised$map)
+```
+
+## Lab 11 deliverables
+1. Upload to canvas your accuracy plot as a pdf format (0.5 pts)
+
+2. Analyze the accuracy matrix and the accuracy plot and briefly answer the questions below. Upload your answers to canvas (2.5 pts). 
+a)	Which class had the highest  producer’s  accuracy? Which one had the lowest?
+b)	What classes had the highest user’s  accuracy? Which one had the lowest?
+c)	For the class that had the lowest producer’s accuracy, what other land cover represents the largest confusion.
+d)	For the class that had the lowest user’s accuracy, what other land cover represents the largest confusion.
+e)	How do you think the classification can be improved?
+
+
+
+
+
+
+
+
+
+

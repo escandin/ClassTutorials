@@ -1,0 +1,217 @@
+---
+title: 'Remote Sensing Lab 7: Image transformation and spectral indices
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2023Fall/Class7_Indices/LabMaterials"
+#wd="/Users/tug61163/Downloads/OneDrive_1_10-10-2023"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+#library(kableExtra)
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+library(kableExtra)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+fig4path=paste(wd, "Fig4.png", sep="/")
+fig5path=paste(wd, "Fig5.png", sep="/")
+fig6path=paste(wd, "Fig6.png", sep="/")
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+fig4 = readPNG(fig4path)
+fig5 = readPNG(fig5path)
+fig6 = readPNG(fig6path)
+```
+
+## Lab due
+October 16 2024
+
+## Goals
+1. To learn the calculation and implementation of different image transformations and spectral indices.
+2. To understand their interpretation and application for land cover discrimination.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore they are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+1. Download from Earth Explorer (earthexplorer.usgs.gov) an image from  Landsat 8-9, Collection 2, Level 2, covering the city of “Pucallpa” (capital of first administrative order) acquired on 2023/09/01 (LC09_L2SP_006066_20230901_20230903_02_T1).
+
+The study area corresponds to the vicinity of the city of Pucallpa. It is crossed by the Ucayali river which along with the Marañon river, form eventually the Amazon river. Pucallpa is connected to Lima, the capital of Peru, through the Federico Basadre road. This road triggered rapid deforestation for the establishment of different cultivations. Most of the agricultural activity has consisted of slash and burn cropping and most recently of the establishment of large and small oil palm plantations.
+
+2. Place the image in your working directory. Then, open a new script in R Studio and change the route to your working directory in the script using the function setwd().
+
+3. Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+4.	Answer the questions in the answer sheet and submit it along with the required pdf file to canvas.
+
+Have fun!
+
+1. Load required libraries and set working directory.
+```{r include = TRUE, message=F, warning=F}
+library(terra)
+library(RStoolbox)
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class7_Indices/LabMaterials"
+setwd(wd)
+```
+
+2. Decompress, open and stack landsat image.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+getwd() # tells you what working directory you are in, just to be sure it's correct
+
+tars=list.files(wd, pattern="tar")
+tars
+untar(tars)
+
+TIFS=list.files(wd, pattern=".TIF")
+TIFS
+# Make sure the numbers corresponding to the names of bands 1 to 7 in the tifs object
+
+L8 = rast(TIFS[c(3:9)]) # rast() function brings the raster bands into the R environment as rasters. Specifically, as a spatRaster object.
+L8
+```
+
+3. Plot an RGB of the image, then use the draw() function to create an extent that includes the vicinity of the city of Pucallpa. Use that extent to crop the Landsat scene.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8, r=5, g=4, b=3, stretch="lin")  # this may have to be run in the console directly. It must plot in the RStudio plot window, usually bottom right
+e=draw(x = "extent") # click top left, bottom right
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+
+# Remove objects to release memory
+rm(L8)
+```
+
+4. Calculate and plot spectral indices
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# SPECTRAL INDICES
+
+# Let's calculate the NDVI (normalized difference vegetation index) manually
+# NDVI = (NIR - Red) / (NIR + Red)
+NDVI = ((L8rsz[[5]] - L8rsz[[4]]) / (L8rsz[[5]] + L8rsz[[4]]))
+plot(NDVI)
+
+# You can use the function spectralIndices() to calculate a variety of indices. Check ?spectralIndices. We will illustrate with NDVI and two additional indices:
+
+L8indices=spectralIndices(L8rsz, blue=2, green=3, red=4, nir=5, swir2=6, swir3=7, indices=c("NDVI", "NDWI", "NBRI"))
+plot(L8indices[[1]])
+plot(L8indices[[2]])
+plot(L8indices[[3]])
+
+plotRGB(L8indices, r=3, g=1, b=2, stretch="lin")
+```
+
+5. Produce a tasseled cap transformation
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Tasseled Cap requires to drop the first band in Landsat 8. See ?tasseledCap
+L8tascap=tasseledCap(L8rsz[[-1]], sat="Landsat8OLI") 
+plotRGB(L8tascap, r=1, g=2, b=3, stretch="lin")
+```
+
+5. Produce a PCA transformation
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8PCA=rasterPCA(L8rsz)
+L8PCA
+summary(L8PCA$model)
+plotRGB(L8PCA$map, r=1, g=2, b=3, stretch="lin")
+```
+
+6. Export the indices and transformations as tif files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeRaster(L8rsz, filename="L8rsz.tif")
+writeRaster(L8indices, filename="L8indices.tif")
+writeRaster(L8tascap, filename="L8tascap.tif")
+writeRaster(L8PCA$map, filename="L8PCA.tif")
+```
+
+7. Launch QGIS and open the four images that you saved
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig1path)
+include_graphics(fig2path)
+```
+
+In the QGIS browser panel, right click on "XYZ Tiles". Then select "New connections".
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig3path)
+```
+
+This will open a new XYZ connection window. Enter "google satellite" as the Name and the following string as URL: https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig4path)
+```
+
+This will add a new layer with high resolution imagery from google.
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig5path)
+```
+
+You can alternatively install the quickmap services plugin following the procedure that will be shown in class.
+
+Zoom in to different areas representing these land covers:
+Urban
+Old-growth forest
+Lake
+River
+Grass
+Burnt areas
+Sand banks
+Oil palm
+
+Then explore and interpret the colors representing each land cover in the RGB maps produced with the spectral indices and the tasseled cap transformation. The image below can be helpful to evaluate the contribution of different bands to pixel color in RGB images:
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig6path)
+```
+
+## Lab deliverables
+
+1. Download from Earth Explorer a recent Landsat image covering the study area that you have considered for your final project. The image should have low cloud cover and good quality. If your study area is subjected to seasons, select an image from nearly the peak of the growing season (July-August). Crop the image to the size of your study area.
+
+2. Produce a tasseled cap transformation and import the image to QGIS.
+
+3. Use the imported image along with high-resolution google imagery to identify and list below the main land cover types that yo can discriminate in your study area.
+
+4. Zoom in to a representative area for each land cover type and produce two screenshots per land cover:
+a. The high resolution image from google 
+b. Tasseled cap transformation with the following RGB combination: R=Brightness, G=Greenness, and B=Wetness
+
+5. Respond the questions below based on the colors of different land covers after applying the tassCap() function. State briefly (40 words or less) your interpretation about those colors based on what each band represents in the tasseled cap transformation and how they look when the three tasseled cap bands are mapped as RGB composites using the plotRGB() function:
+
+a. What land cover results in the redest colors?  ___________________________ Interpretation: ___________________________________________________________________
+
+b. What land cover results in the bluest colors?  ____________________________
+Interpretation: __________________________________________________________________
+
+c. What land cover results in the greenest color?  _________________________________
+Interpretation: __________________________________________________
+
+d. are there any land covers appearing as yellow, cyan, magenta or white?
+which are those?_____________________________________________
+Interpretation: _________________________________________________
+
+BONUS QUESTION (0.5 e points).Upload upload an RGB map with bands 1, 2, and 3 resulting from a PCA transformation. Describe to what extent areas representing each one of the land cover classes that you defined for your study area tend to display consistently similar color characteristics . 
+
+To upload in canvas:
+
+1.	The name of the land cover types defined for the study area as described in point 3 (0.5 pt)
+
+2. A single pdf file with the two screenshots for areas tipifying the land cover classes that you identified for your study area described above. Make sure to label the screenshots with the land cover type that they represent and to use an adequate zoom to allow appropriate visualization (2 pt).
+
+3.	Answer to the questions in point 5 (1.5 pt) in a word document.
+
+4. OPTIONAL: answer to bonus question (0.5 pt)

@@ -1,0 +1,486 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 2: Introduction to R Environment and structures'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 12 2022
+
+## Goal
+To become familiar with the R environment as well as basic data structures.
+
+To learn how to import and perform basic operations with spatial data in R
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+### Downloading and opening required software
+The installation instructions below are adapted from here (https://www.andrewheiss.com/blog/2012/04/17/install-r-rstudio-r-commander-windows-osx/)
+
+### In Windows
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Windows” > “base” > “Download R X.X.X for Windows” (latest version). You can also click on "Installation and other instructions for further details.
+2. Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop and install it. Leave all default settings in the installation options.
+
+### In Mac
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Mac OS X” > “R-X.X.X.pkg” (latest version).
+2.	Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop.
+4.	Install RStudio by double clicking on the downloaded file.
+5. Install xcode to execute the plot3D function. You can download it from here: https://developer.apple.com/xcode/ . You will need to restart your machine after installation.
+6. Install homebrew. Open terminal and paste the line of code that appears on top here: https://brew.sh
+7. Install the cartographic projections library by pasting and running the line of code that appears in the following link in your terminal: https://formulae.brew.sh/formula/proj
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+I strongly recommend this introductory R book: https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf 
+
+Have fun!
+
+### 1. The RStudio Environment
+R studio has four main panels.
+1. Code: This is where you write and save your scripts
+2. Console: Here is where you run the code and can visualize the outputs of operations.
+3. Environment: You can visualize here the objects loaded in R
+4. Files, plots, packages, help: Use it to explore folders, visualize plots, load libraries and document the execution of functions.
+
+### 2. R essentials
+You can write code directly in the console or run it using the code panel. To run code using the code panel, you can locate the cursor in the line of code that you want to run or select a chunk of code (shift+arrows) and then execute it by typing shift+enter
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+"hello world"
+```
+
+Or make basic operations
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+2+3
+```
+
+R operates with objects. For instance, instead of writing 2+3, you can do:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+a=2
+b=3
+c=a+b
+a
+b
+c
+```
+
+In this case, a, b, and c are objects (notice that they are loaded in the environment panel). You can re-use objects for further operations
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+c^(a/b)
+```
+
+Objects can be numeric or strings (text)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+d = "I love"
+e = "machine learning"
+```
+
+In addition to numeric or character there are also logical values in R. You can know the types of values or vectors by using the function class()
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+class(a)
+class(b)
+a>b
+class(a>b)
+```
+
+There are other types of values that are considered as missing values or not a number (NaN). Any operation with these values return an (NaN)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+h=sqrt(-c)
+h
+a*h
+```
+
+There are also infinity numbers. Any number multiplied by infinity results into infinity, except for a NaN
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+i=1/0
+a*i
+h*i
+```
+
+### 3. Data structures
+
+#### Vectors
+You can  store different elements in a data structure known as "vector". A vector is created using the function c
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+vec1=c(10, 5, 3, 9, 4)
+vec1
+vec2=c(a, b, c, a/b, b*c)
+vec2
+vec3=c(vec1, vec2)
+vec3
+```
+
+In fact a, b, and c are considered by R as a vector with only one element. You can know the number of elements in a vector by using the function length
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+length(a)
+length(vec1)
+```
+
+An operation between a number and a vector, returns an object that applies the value of the number to all the elements in the vector. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+a*vec1
+```
+
+An operation between vectors of different lengths results in repeating some of the elements in the shorter vector until the length matches the one of the longest vector
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+vec4=c(5,2,9)
+vec3+vec4
+```
+
+Vectors are indexed so you can select given elements from a vector for different purposes
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+vec1[c(1,3,5)]
+vec1>4
+vec1[vec1>4]
+vec1[vec1>4]=NA
+```
+
+Vectors are considered as a class on their own. Other classes in R are matrix, array, factor, data frame and list
+
+#### Matrices
+Matrices are objects that have two dimensions
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+m=matrix(seq(1,9), nrow=3) # is the same as
+m=matrix(seq(1,9), ncol=3)
+m
+```
+
+Matrices are usually arranged by column but you can also arrange them by row with an additional argument in the matrix() function
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+m=matrix(seq(1,9), ncol=3, byrow=T)
+m
+```
+
+Matrices can be indexed by using the row and column number
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+m[2,2]
+m[2,]
+m[,2]
+class(m)
+```
+
+You can also join two vectors to produce a matrix
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+m2=cbind(vec1,vec2)
+m3=rbind(vec1,vec2)
+class(m2)
+class(m3)
+```
+
+#### Arrays
+Arrays are objects with one or more dimensions. A matrix is an array with only two dimensions
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ar=array(seq(1,36), c(3,4,3))
+ar
+ar[2,3,]
+m4=ar[1:3, 1:2, 3]
+class(ar)
+class(m4)
+```
+
+#### Factors
+A factor is a data structure used to store categorical variables. Some machine learning algorithms require some variables to be entered as factors so that they recognize entries with the same name as part of the same class.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+LandCover=c("grassland","impervious", "forest", "forest", "water", "grassland", "bare soil", "impervious", "grassland")
+LandCover
+class(LandCover)
+LandCover=factor(LandCover)
+LandCover
+class(LandCover)
+```
+
+#### Data frames
+Data frames are the most used type of structures for machine learning in R. They are typically used to store observations (arranged as rows) for different types of variables (arranged as columns). They are the equivalent of a spreadsheet in R. They can also be understood as a set of vectors or factors with the same length
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+temperature=c(25, 32, 18, 21, 12, 27, 29, 33, 26)
+humidity=c(17, 6, 55, 67, 100, 22, 12, 8, 19)
+soildepth=c(20, 0, 70, 65, 0, 17, 12, 0, 19)
+ecodata=data.frame(LandCover, temperature, humidity, soildepth)
+class(ecodata)
+```
+
+You can actually load a data frame in R studio as a spreadsheet by double clicking on its name in the environment panel.
+
+#### Lists
+A list is the most flexible type of object in R. It can compile different types of data sets in different compartments or slots. Due to this flexibility, lists are often used to store various types of input and output data and sets of configuration parameters for machine learning models.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+l=list(a, paste(d,e, sep=" "), h, vec1, ar, ecodata)
+l
+class(l)
+```
+
+You can retrieve an element of the list by using double bracekt
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+l[[6]]
+l[[6]][,3]
+```
+
+#### Functions
+Functions are pre-coded computations applied to objects. For instance:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sqrt(a)
+f=sum(vec3)
+g=length(vec3)
+mean(vec3)
+f/g
+sd(vec3)
+sort(vec1)
+paste(d,e, sep=" ")
+```
+
+You can see the code behind each function by writing the name of the function:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sqrt
+sd
+paste
+```
+
+Functions are implemented through the use of arguments. Each function has its own arguments. Some of them are required and some of them are optional. You can learn how to implement a function by writing ? followed by the name of the function
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+?paste
+```
+
+Use the function rm() to remove objects from the environment. Check that removed objects disappear from the "Environment" panel
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(l)
+rm(list=ls()) # removes all objects from the environment
+```
+
+### 4. Libraries or packages
+Libraries or packages are structures that contain a set of functions for specialized tasks. There are packages that come loaded with the basic installation of R (base packages) but the vast majority of packages require installation. There are thousands of packages available in R. Most of the pa akges can be downloaded from the CRAN respository (https://CRAN.R-project.org/) but there are other (more informal) repositories such as bioconductor (https://www.bioconductor.org/) and also in github.
+
+You can use the function library() to load the functions of a package
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(sf)
+library(terra)
+library(geodata)
+```
+
+If you receive an error, it means that the library is not installed yet. You can use the function install.packages() for that purpose:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+install.packages("sf")
+install.packages("terra")
+install.packages("geodata")
+```
+
+### 5. Setting the environment in R
+Before loading or saving objects, it is important to setup the working directory. By default, files are read and written in the working directory.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Documents/Courses/MALESA/2022Fall/Week2/Lab1_2"
+setwd(wd)
+```
+
+Use the function dir() to visualize the files in the working directory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+```
+
+### 6. Downloading and importing data into R
+
+6.1. Download the air quality data from EPA and then unzip it. The files are located here: https://aqs.epa.gov/aqsweb/airdata/download_files.html 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+url="https://aqs.epa.gov/aqsweb/airdata/annual_conc_by_monitor_2021.zip"
+filename="annual_conc_by_monitor_2021.zip"
+dest=paste(wd, filename , sep="/")
+download.file(url,dest)
+unzip(filename)
+dir()
+```
+
+6.2.Open the csv file, and explore it. Notice that you can double click on the object in the environment panel to visualize it as a spreadsheet in RStudio
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+data=read.csv("annual_conc_by_monitor_2021.csv", stringsAsFactors=FALSE)
+names(data)
+head(data)
+summary(data)
+str(data)
+```
+
+6.3. The column "Parameter.Name" contains the parameters measured in each one of the rows. Let's take a look at the types of parameters that were recorded in the database, organized in alphabetical order.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sort(unique(data$Parameter.Name))
+```
+
+6.4. Let's visualize the number of entries per parameter name
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+table(sort(data$Parameter.Name))
+```
+
+6.5. Notice that "table" is a function but also another object class in R. It builds a contingency table with the frequency of a given class in a data structure
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+class(table(sort(data$Parameter.Name)))
+```
+
+6.6. Subset the data frame: We are interested in converting only those entries corresponding to "PM2.5 - Local Conditions" so let's produce a data subset with only those values. DON'T FORGET THE COMMA AT THE END!
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pm25data=data[data$Parameter.Name=="PM2.5 - Local Conditions",]
+nrow(pm25data)
+```
+
+### 7. Working with spatial data structures in R
+7.1. Convert the csv into a spatial object. First identify the columns corresponding to the coordinates and explore them.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(pm25data)
+head(pm25data$Latitude)
+head(pm25data$Longitude)
+```
+
+7.2. It looks like the coordinates are in a geographic format (lat, long). In order to convert the dataframe into a sf spatial object, it is important to know the Coordinate Reference System or CRS. That information is typically contained in the file itself or in a separate metadata file. We can see that "Datum" is the name of one of the columns in the data file.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sort(names(pm25data))
+unique(pm25data$Datum)
+table(pm25data$Datum)
+```
+
+7.3. We can see that there are two types of datum (NAD83, WGS84) in the database. That is not very convenient. We will have to reproject the data under each coordinate system separately. For that purpose, we will have to split the file again.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nadSubset=pm25data[pm25data$Datum=="NAD83",]
+wgsSubset=pm25data[pm25data$Datum=="WGS84",]
+```
+
+7.4. Then, convert each data set to spatial objects separately. For that purpose, we need to obtain the crs string for each projection in proj4 format. You can check the formats here: https://spatialreference.org/ 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wgs84prj=st_crs("EPSG:4326") # for WGS84
+nad83prj=st_crs("EPSG:4269") # for NAD83
+
+wgs84spat=st_as_sf(wgsSubset, coords=c("Longitude", "Latitude"), crs=wgs84prj)
+nad83spat=st_as_sf(nadSubset, coords=c("Longitude", "Latitude"), crs=nad83prj)
+st_crs(wgs84spat)
+st_crs(nad83spat)
+```
+
+7.5. Then reproject one of them and combine them in one file. Check the class of the resulting spatial object.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nad2wgs=st_transform(nad83spat, wgs84prj)
+pm25dataPrj=rbind(wgs84spat, nad2wgs)
+pm25dataPrj
+class(pm25dataPrj)
+```
+
+7.6. Remove unneeded objects to release memory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(nad2wgs, nad83prj, nad83spat, nadSubset, pm25data, wgs84prj, wgs84spat, wgsSubset)
+```
+
+7.7. Plot spatial objects
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(pm25dataPrj["Arithmetic.Mean"])
+```
+
+7.8. Subset the objects. Let's first convert the sf object to a terra object. Notice that the new object has a different class
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pm25t=vect(pm25dataPrj)
+class(pm25t)
+pm25t
+plot(pm25t)
+e=draw(x="extent")
+pm25tSub=crop(pm25t, e)
+plot(pm25tSub)
+nrow(pm25tSub)
+```
+
+7.9. Download raster data sets representing elevation. Elevation files cover an area of 5x5 degrees so..
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+e # This is the extent of the selected points above
+elev2=elevation_3s(-72, 38, wd)
+elev3=elevation_3s(-77, 38, wd)
+elev4=elevation_3s(-82, 38, wd)
+elev5=elevation_3s(-67, 42, wd)
+elev6=elevation_3s(-72, 42, wd)
+elev7=elevation_3s(-77, 42, wd)
+elev8=elevation_3s(-82, 42, wd)
+elev9=elevation_3s(-67, 47, wd)
+elev10=elevation_3s(-72, 47, wd)
+elev11=elevation_3s(-77, 47, wd)
+elev12=elevation_3s(-82, 47, wd)
+```
+
+7.10. The objects are imported as a SpatRaster object
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+class(elev3)
+elev3
+```
+
+You probably could create a function to do this but we will learn about functions later.
+
+7.11. Combine all the rasters in one single file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+elev=merge(elev2, elev3, elev4, elev5, elev6, elev7, elev8, elev9, elev10, elev11, elev12)
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(elev2, elev3, elev4, elev5, elev6, elev7, elev8, elev9, elev10, elev11, elev12)
+```
+
+7.12.Plot the elevation map and add the vector points
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(elev)
+plot(pm25tSub, add=TRUE)
+```
+
+7.13. Save the plot in a pdf file.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf(file="PM25perElevation.pdf")
+plot(elev)
+plot(pm25tSub, add=TRUE)
+dev.off()
+```
+
+7.14.Save the resulting spatial objects to the disk
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeVector(pm25tSub, "pm25tSub", filetype="ESRI Shapefile")
+writeRaster(elev, "elev.tiff")
+```
+
+## Lab instructions
+
+1. Download to your working directory, a csv file with the air emissions inventory from the State of Utah from here: https://hub.arcgis.com/datasets/utah::utah-daq-air-emissions-inventory/explore?location=19.753595%2C-112.283511%2C4.95
+
+2. Import it into R as a data frame using the read.csv() function (step 6.2.). 
+
+3. Convert the data frame into an sf spatial object using the function st_as_sf() (step 7.4.). For that purpose, use the columns named X, Y in the data frame as the coordinates to import the file as an sf object assuming a WGS projection ("EPSG:4326").
+
+4. Plot the resulting sf object using "CARBON_MONOXIDE" as the plotting field (step 7.7.)
+
+Notice that there is a point that is likely misplaced all the way to the south in the plot
+
+6. Convert the file into a spatial vector object and resize the extent to exclude the misplaced point (step 7.8.)
+
+7. Download elevation files covering the extent of the resized object (ste 7.9.). You will need to download 4 elevation files in total.
+
+8. Merge the elevation files in a single raster (step 7.11.).
+
+9. Plot the elevation file and overlay the locations represented in the spatial vector  (step 7.12.). Save it as a pdf (step 7.13.)
+
+## Lab deliverables (due on Sep 12)
+
+1. Load the resulting pdf file in the Module 2 section in canvas.
+
+2. Complete the four questions in the following form regarding your aim for the final project: https://forms.office.com/r/YxwXWEJRAG
+
+

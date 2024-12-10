@@ -1,0 +1,234 @@
+---
+title: 'Spatial Analysis. Lab Week 7: Hypothesis testing'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+fig2path=paste(wd, "Fig2Lab5.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+March 15 2023
+
+## Goals
+At the end of this lab, students will know:
+
+-How to formulate a null and an alternative hypothesis
+
+-How to identify and implement a suitable test for specific problems
+
+-How to draw conclusions based on the test results
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+#### Setting up the environment
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module5_Confidence")
+setwd(wd)
+dir()
+```
+
+#### Background
+##### 1. Steps for hypothesis testing
+For hypothesis testing, the following steps are recommended:
+1. State a question
+2. State a null and an alternative hypothesis
+3. Define the type of test to be implemented (PROVIDE DECISION TREE)
+4. Implement the test
+5. Interpret the results and draw conclusions
+
+##### 2. Reference data
+For this and some other future labs we will use survey data from the American National Election Studies (ANES). 
+
+You can download the csv file associated to this dataset from the module "Datasets" in canvas. Please read the description and access the links to become familiar with the dataset.
+
+### SETTING UP THE ENVIRONMENT AND DOWLONADING
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+install.packages("BSDA") # only if it is not already installed
+library(BSDA)
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module7_HypothesisTesting")
+setwd(wd)
+dir()
+anes=read.csv("anes_2020ets.csv")
+
+```
+
+### PART 1: HYPOTHESIS TESTING FOR POPULATION MEANS
+
+#### Excercise 1: Two tailed test
+
+One of the variables included in ANES measures the feelings of people towards some potential US presidencial candidates (check FEELING THERMOETERS in page 6 of the questionnaire referenced above). We will use the information that measures how favorable sampled people feel towards Donald Trump to perform a hypothesis testing
+
+For that purpose, let's assume that the former president Trump was equally liked and disliked among the US voters. Thus, the assumed population mean of ‘fttrump’ is 50. Let's also assume that the standard deviation of the population is known and is equal to 10. Now, let's conduct a hypothesis test if the assumed population mean of 'fttrump' is statistically different from the sample mean of 2471 US voters. 
+
+Before performing the test, let's explore the variable of interest. In this case the variable is named'fttrump1'
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(anes$fttrump1)
+```
+
+You can see that the values go from 0 to 999. However, you can read in the description that the values range from 0 to 100. The value of 999 is out of this range. That value was assigned by default when exporting the data from the original format to observations that did not contain an answer in any of the questions and therefore those observations need to be removed. For this purpose, we will convert those values to NAs (Not A Number) and then removed from the database using the procedure described in lab 2.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anes$fttrump1[anes$fttrump1==999]=NA
+summary(anes$fttrump1)
+anes=subset(anes, complete.cases(anes$fttrump1))
+summary(anes$fttrump1)
+```
+
+Let's proceed with the steps required to perform the test
+1. State a question: how favorable where the US population towards Donald Trump at the time of the survey?
+2. State a null and an alternative hypothesis:
+According to the problem, it is assumed that Trump was equally liked and disliked by US voters therefore
+H0: mu== 50 
+HA: mu != 50
+
+3. Define the type of test to be implemented:
+a. Is the standard deviation of the population known? Yes: Z-test
+b. Is the hypothesis about inferring the population mean from a sample or about inferring differences between two samples? Population: one sample test
+c. Does the alternative hypothesis involve an inequality? No: two tailed test
+
+4. Implement the test:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+?z.test
+z.test(anes$fttrump1, mu=50, sigma.x=10)
+```
+
+#######################################
+#######################################
+#######################################
+This test is equivalent to this more elaborate procedure: (RE DO LATER!!!!)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+
+zstat=(mean(anes$fttrump1)-50)/(10/sqrt(length(anes$fttrump1)))
+pnorm(zstat) # DOESN'T WORK!!!
+
+# Confidence interval
+CIlow=mean(anes$fttrump1)-qnorm(0.975)*sd(anes$fttrump1)/(length(anes$fttrump1))
+CIhi=mean(anes$fttrump1)+qnorm(0.975)*sd(anes$fttrump1)/(length(anes$fttrump1))
+
+
+mean(anes$fttrump1)-qnorm(0.95)*10/(length(anes$fttrump1)-1)
+```
+
+5. Interpret the results and draw conclusions
+The p-level is very low (and therefore the confidence intervals at a very high level do not include 50). Therefore results support the alternative hypothesis that the favorabilty for Trump among US voters is different to 50. The null hypothesis is rejected. Results also suggest that favorability towards Trump is lower than 50%.
+
+#### Excercise 2: one tailed test
+Perform the same excercise than above but this time test whether TRUMP support is lower than 50%.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+z.test(anes$fttrump1, mu=50, sigma.x=10, alternative="less")
+```
+
+### PART 2: HYPOTHESIS TESTING FOR SAMPLE MEANS
+
+#### Excercise 3: 
+Now, let’s conduct a test to evaluate whether the average rating of Trump by men and women is significantly different.
+
+For that purpose, let's use the information in the column "sex" to make two subsets for fttrump, one containing the responses by women and another the responses by men. For that purupos
+
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(anes$sex)
+male=anes$fttrump1[anes$sex==1]
+female=anes$fttrump1[anes$sex==2]
+```
+
+Let's proceed with the steps required to perform the test
+
+1. State a question: is there any difference in the perception of voting women and men about Trump?
+2. State a null and an alternative hypothesis
+H0: mean_male == mean_female
+H1: mean_male != mean_female
+3. Define the type of test to be implemented
+a. Is the standard deviation of each population known? No: t-test
+b. Is the hypothesis about inferring the population mean from a sample or about inferring differences between two samples? samples: two sample test
+c. Does the alternative hypothesis involve an inequality? No: two tailed test
+d. Can the standard deviations be assumed as equal?
+
+Empirically, it is stated that variances can be assumed as different if one is about twice the size of the other (Hammerman et al 2012)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sd(male)
+sd(female)
+sd(male)/sd(female)
+```
+
+The standard deviations are very similar so they can be assumed as the same. A more rigurous way to assess equally of variance is through the application of an F-test. We will cover the F-test later. For now, let's say that the F-test assessess the probability of two variances being different.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+var.test(male, female, alternative="two.sided")
+```
+
+The p value and the confidence interaval support the null hypothesis that the variances are equal. Therefore the answer to d is yes: pooled test
+4. Implement the test
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+t.test(male, female, alternative="two.sided", var.equal=TRUE)
+```
+
+5. Interpret the results and draw conclusions:
+The p-level is very low (and therefore the confidence intervals at a very high level of confidence do not include 0). Therefore results support the alternative hypothesis that the favorabilty for Trump among US male and female voters is different. The null hypothesis is rejected. Results also suggest that female see Trump less favorable than male.
+
+#### Excercise 4
+For comparison, let's assume that the variances are different among the two groups
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+t.test(male, female, alternative="two.sided", var.equal=FALSE)
+```
+
+Results look slightly different but not enough to change the conclusions.
+
+## Lab deliverables
+Please follow and describe the five steps described and illustrated in the examples above to perform the following two exercises. Make sure to remove any entries with no data base before performing your analysis.
+
+#### Excercise: 1
+Read the description of the variables associated with participation (page 4) in the ANES report. Then select the appropriate variable to produce a hypothesis test to assess whether there are any differences in the extent to which people feel favorable towards Joe Biden between people that participate in any of the political activities described versus people that do not participate.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anes$ftbiden1[anes$ftbiden1==999]=NA
+summary(anes$ftbiden1)
+anes=subset(anes, complete.cases(anes$ftbiden1))
+summary(anes$ftbiden1)
+
+summary(anes$particip_none)
+nopart=anes$ftbiden1[anes$particip_none==0]
+part=anes$ftbiden1[anes$particip_none==1]
+
+var.test(nopart, part, alternative="two.sided") 
+
+t.test(nopart, part, alternative="two.sided", var.equal=TRUE)
+```
+
+#### Excercise: 2
+Download from the module "datasets" the file corresponding to the UNHDI in csv format. Please read the description and access the links to become familiar with the dataset. For the purpose of this report, we are going to use the indicators for life expectancy. Use the data to assess whether life expectancy for women differ from life expectancy among men.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hdi=read.csv("UNHDI_2020_w_Happiness.csv")
+summary(hdi)
+nrow(hdi)
+hdi=subset(hdi, complete.cases(hdi$Female.Life.expectancy.at.birth))
+nrow(hdi)
+
+# Test for equality of variance
+var.test(hdi$Female.Life.expectancy.at.birth, hdi$Male.Life.expectancy.at.birth, alternative="two.sided")
+
+t.test(hdi$Female.Life.expectancy.at.birth, hdi$Male.Life.expectancy.at.birth, alternative="two.sided", var.equal=TRUE)
+```
+

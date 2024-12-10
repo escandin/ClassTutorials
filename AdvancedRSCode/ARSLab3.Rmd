@@ -1,0 +1,221 @@
+---
+title: 'Advanced Remote Sensing Lab 3: Multiple Endmember Spectral Mixture Analysis (Spectral Unmixing)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+### Lab due
+Febraury 09 2021
+
+### Goals
+1. To become familiar with manual and PCA-based selection of endmember pixels
+2. To learn how to perform spectral mixture analysis
+3. To learn how to interpret the results of spectral mixture analysis
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session3_SpectralUnmixing"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "SelEdit.png", sep="/")
+fig2path=paste(wd, "Sel2Edit.png", sep="/")
+fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab instructions
+
+### 1. Environment setup and data loading
+Download the image named "l8Crop.tif" from the session 3 module in canvas: https://templeu.instructure.com/courses/89254/files/12469461?module_item_id=2991793
+
+Save downloaded image in a folder that you will use as a working directory. 
+
+Setup working directory and load required libraries. In my case I saved it here: "/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session3_SpectralUnmixing".
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+setwd("/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session3_SpectralUnmixing")
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+
+Open and plot image.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+l8Crop=stack("l8Crop.tif")
+plotRGB(l8Crop, r=5, g=4, b=3, stretch="lin")
+```
+
+#### 2 Spectral unmixing based on user-defined endmembers
+Plot original image and extract spectral information from locations in the image that tipify endmembers of interest.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(l8Crop, r=5, g=4, b=3, stretch="lin")
+em1a=click(l8Crop, n=1, id=TRUE)
+em2a=click(l8Crop, n=1, id=TRUE)
+em3a=click(l8Crop, n=1, id=TRUE)
+emspecMan=rbind(em1a, em2a, em3a)
+row.names(emspecMan)=cbind("em1a", "em2a", "em3a")
+```
+
+Perform spectral unmixing, plot the resulting image and save it to the disc. SAVE THE IMAGE FOR THE NEXT LAB!
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unmixMan=mesma(l8Crop, emspecMan)
+plotRGB(unmixMan, r=1, g=2, b=3, stretch="lin") 
+writeRaster(unmixMan, "unmixMan.tif")
+```
+
+Based on the interpretation of the plotted image, what name would best describe each endmember?
+
+Produce a spectral angle map based on the selected endmembers.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sa=sam(l8Crop, emspecMan)
+plot(sa)
+```
+
+#### 3. Spectral unmixing based on PCA analysis
+Calculate PCA, explore results and plot.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+l8PCA=rasterPCA(l8Crop, nSamples=5000)
+loadings(l8PCA$model)
+plotRGB(l8PCA$map,  r=1, g=2, b=3, stretch="lin")
+```
+
+Extract values for the first two components and plot them.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Extract values into a dataframe
+l8PCAdata=getValues(l8PCA$map)
+l8PCAdata=data.frame(l8PCAdata)
+
+# Select data from the first two components
+pca12=cbind(l8PCAdata$PC1, l8PCAdata$PC2)
+
+# Obtain a random sample to plot.
+samp=sample(nrow(pca12), round(nrow(pca12)*.05))
+pca12sub=pca12[samp, ]
+
+## Plot sampled values
+# RESET GRAPHICAL INTERFACE
+plot(pca12sub, pch = 20, cex=.1, col = "darkgreen")
+```
+
+Extract values for the endmembers: Run the line of code associated to em1 to produce a scatterplot produced by the two principal components. Then click in one of the corners of the PCA plot (red circles in the plot as shown below) and select "finish" on top right of the plotting area (red circle below). This will store the pixel ID for that point. Do the same with em2 and em3.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+em1=identify(pca12sub)
+em2=identify(pca12sub)
+em3=identify(pca12sub)
+emspec=extract(l8Crop, c(samp[em1],samp[em2],samp[em3]))
+row.names(emspec)=c("em1", "em2", "em3")                            
+```
+
+Perform spectral unmixing, plot the resulting image and save it to the disc. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unmixPCA=mesma(l8Crop, emspec)
+plotRGB(unmixPCA, r=1, g=2, b=3, stretch="lin") 
+writeRaster(unmixPCA, "unmixPCAHM.tif")
+```
+
+Produce a spectral angle map based on the endmembers
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sa=sam(imgCrop, emspec)
+plot(sa)
+```
+
+#### 4. BONUS: Spectral unmixing in GEE
+
+Select, subset and display image data set.
+```{JavaScript}
+// Get the image.
+var scene = ee.Image('LANDSAT/LC08/C01/T1_TOA/LC08_232066_20200729')
+
+// Select bands
+var bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'];
+
+var scensub= scene.select(bands);
+print(scensub, "scenesub");
+
+// Display image
+Map.addLayer(scensub,
+{bands: ['B5', 'B4', 'B3'], min: 0.1, max: .8, gamma: 2}, 'landsat 8 TOA');
+
+Map.centerObject(scensub, 10);
+```
+
+Collect endmember pixels manually.
+
+Zoom into an area tipyfing an endmember of interest. Then click on the pin simbol(red circle 1 in figure below), locate the cursor in the area of interest and click. This will create a pin (green pin in image below) and a new variable entry in the top of the code. Change the name of the entry to the name of the endmember (wet in red circle 2 in figure below).
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Click on geometry inputs and then in "+ new layer" (red circle #3 in image below). Select a new endmember and change the name by repeating the steps described above.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Extract spectral values from selected endmember pixels.
+```{JavaScript}
+// extract pixel values for each point
+var vegspec = scensub.reduceRegions(veg, ee.Reducer.first(),30);
+var wetspec = scensub.reduceRegions(wet, ee.Reducer.first(),30);
+var soilspec = scensub.reduceRegions(soil, ee.Reducer.first(),30);
+
+// values are extracted as a feature collection composed by one element.
+// select that element to make it a feature
+
+var vegspec1 = vegspec.first()
+var wetspec1 = wetspec.first()
+var soilspec1 = soilspec.first()
+
+var vegref = [vegspec1.get('B1'), vegspec1.get('B2'), vegspec1.get('B3'), 
+vegspec1.get('B4'), vegspec1.get('B5'), vegspec1.get('B6'), vegspec1.get('B7')];
+
+var wetref = [wetspec1.get('B1'), wetspec1.get('B2'), wetspec1.get('B3'), 
+wetspec1.get('B4'), wetspec1.get('B5'), wetspec1.get('B6'), wetspec1.get('B7')];
+
+var soilref = [soilspec1.get('B1'), soilspec1.get('B2'), soilspec1.get('B3'), 
+soilspec1.get('B4'), soilspec1.get('B5'), soilspec1.get('B6'), soilspec1.get('B7')];
+```
+
+Produce spectral mixture image and display it.
+```{JavaScript}
+var frac = scensub.unmix([soilref, vegref, wetref]);
+print("frac", frac)
+
+Map.addLayer(frac,
+{bands: ['band_0', 'band_1', 'band_2'], min: 0.1, max: .8, gamma: 2}, 'unmix');
+```
+
+#### Homework
+
+Download the image "l8CropHW.tif" from the session 3 module in canvas: https://templeu.instructure.com/courses/89254/files/12478024?module_item_id=2992962 . Then adapt the code presented in sections 2 and 3 in the lab instructions to collect three endmembers for spectral mixture analysis using manual vs. PCA-based selection of endmembers.
+
+1. Describe briefly the three endmembers that you selected manually. How would you best define the material represented by each endmember?
+
+2. Upload a screenshot of a scatterplot produced by a sample of the two first principal components to select endmembers using the PCA method (similar to the one produced in step 3 of the lab.
+
+3. Upload a screen shot with an RGB image corresponding to the spectral mixture image obtained through manual selection of endmembers and another one showing the results obtained through endmember selection using PCA analysis. Make sure that the bands are displayed in an order that makes the images as comparable as possible. Do the two images look similar? Based on a visual inspection of the two images, do you believe that both methods use about the same types of materials? What do you think may explain any differences between the two images? 
+
+4. BONUS (1 extra point in the lab!): Perform a spectral mixture analysis in GEE by changing the ee.Image string in section 4 of the lab for this one "LANDSAT/LC08/C01/T1_TOA/LC08_119038_20200503". It corresponds to the same as the one you used for your homework in R. Then select approximately the same endmembers that you selected manually in step 2 of the homework. Make sure that the endmembers are displayed in the same order in the RGB image as the ones you produced in R. Upload the image. Does the RGB image look reasonably similar to the ones that you produced in step 2? What could explain differences if any?

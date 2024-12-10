@@ -1,0 +1,281 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 2: Working with spatial data'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 10 2024
+
+## Goal
+To learn how to import, reformat, combine and display spatial data in vector and raster formats in R
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+I strongly recommend this introductory R book: https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf 
+
+Have fun!
+
+### 1. Installing and loaded libraries or packages
+Libraries or packages are structures that contain a set of functions for specialized tasks. There are packages that come loaded with the basic installation of R (base packages) but the vast majority of packages require installation. There are thousands of packages available in R. Most of the pa akges can be downloaded from the CRAN respository (https://CRAN.R-project.org/) but there are other (more informal) repositories such as bioconductor (https://www.bioconductor.org/) and also in github.
+
+You can use the function library() to load the functions of a package
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(sf)
+library(terra)
+library(geodata)
+```
+
+If you receive an error, it means that the library is not installed yet. You can use the function install.packages() for that purpose:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+install.packages("sf")
+install.packages("terra")
+install.packages("geodata")
+```
+
+### 2. Setting the environment in R
+Before loading or saving objects, it is important to setup the working directory. By default, files are read and written in the working directory. Here we will create a folder and then set it up as the working directory:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir.create("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week2/Lab2")
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week2/Lab2"
+setwd(wd)
+```
+
+Use the function dir() to visualize the files in the working directory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+```
+
+### 3. Downloading, importing and subsetting spreadsheet data in R
+
+3.1. Download the air quality data from EPA and then unzip it. The files are located here: https://aqs.epa.gov/aqsweb/airdata/download_files.html 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+url="https://aqs.epa.gov/aqsweb/airdata/annual_conc_by_monitor_2021.zip"
+filename="annual_conc_by_monitor_2021.zip"
+dest=paste(wd, filename , sep="/")
+download.file(url,dest)
+unzip(filename)
+dir()
+```
+
+3.2.Open the csv file, and explore it. Notice that you can double click on the object in the environment panel to visualize it as a spreadsheet in RStudio;
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+data=read.csv("annual_conc_by_monitor_2021.csv", stringsAsFactors=FALSE)
+names(data)
+head(data)
+summary(data) # provide descriptive statistics for each variable
+str(data) # check the structure of the data
+```
+
+3.3. The column (variable) "Parameter.Name" that contains the parameters measured for each sampled site.  Let's take a look at the types of parameters that were measured for each location in the database, organized in alphabetical order.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sort(unique(data$Parameter.Name))
+```
+
+3.4. Let's visualize the number of entries per parameter name
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+table(sort(data$Parameter.Name))
+```
+
+3.5. Notice that "table" is a function but also another object class in R. It builds a contingency table with the frequency of a given class in a data structure
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+class(table(sort(data$Parameter.Name)))
+```
+
+3.6. Select a subset of the database measuring one parameter of interest : We are interested in analyzing only those entries corresponding to the parameter "PM2.5 - Local Conditions" so let's produce a data subset with only those values. DON'T FORGET THE COMMA AT THE END!
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pm25data=data[data$Parameter.Name=="PM2.5 - Local Conditions",]
+nrow(pm25data)
+nrow(data)
+```
+
+### 4. Converting spreadsheet data into spatial data structures in R
+4.1. First identify the columns corresponding to the XY coordinates and explore them.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(pm25data) # provides the names of the variables (columns) in the database
+head(pm25data$Latitude) # first five entries (rows) of the variable "Latitude"
+head(pm25data$Longitude) # first five entries (rows) of the variable "Longitude"
+```
+
+4.2. It looks like the coordinates are in a geographic format (lat, long). In order to convert the dataframe into a sf spatial object, it is important to know the Coordinate Reference System or CRS. That information is typically contained in the file itself or in a separate metadata file. We can see that "Datum" is the name of one of the column that provides that information in the dataframe.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sort(names(pm25data))
+unique(pm25data$Datum)
+table(pm25data$Datum)
+```
+
+4.3. We can see that there are two types of datum (NAD83, WGS84) in the database. That is not very convenient. We will have to bring the XY coordinates to the same coordinate system separately. For that purpose, we will have to split the dataframe into two subsets, one for each datum.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nadSubset=pm25data[pm25data$Datum=="NAD83",]
+wgsSubset=pm25data[pm25data$Datum=="WGS84",]
+```
+
+4.4. Then, we will need to convert each data set to spatial objects separately. For that purpose, we need to obtain the crs string for each projection in proj4 format. You can check the formats here: https://spatialreference.org/ 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Create two crs objects with the wide arguments that describe the coordinate reference system (crs) for the coordinates in each data subset
+wgs84prj=st_crs("EPSG:4326") # for WGS84
+nad83prj=st_crs("EPSG:4269") # for NAD83
+wgs84prj
+nad83prj
+
+# Use the crs objects to convert each data subset into a spatial feature
+wgs84spat=st_as_sf(wgsSubset, coords=c("Longitude", "Latitude"), crs=wgs84prj)
+nad83spat=st_as_sf(nadSubset, coords=c("Longitude", "Latitude"), crs=nad83prj)
+
+# This shows that the new spatial database was asigned the appropriate crs  
+st_crs(wgs84spat)
+st_crs(nad83spat)
+```
+
+4.5. Reproject one of the dataframes to the crs of the other and combine both datasets into one file. Check the class of the resulting spatial object.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nad2wgs=st_transform(nad83spat, wgs84prj) # reprojects one file into the other
+st_crs(nad2wgs)
+
+pm25dataPrj=rbind(wgs84spat, nad2wgs) # merges both datasets
+
+#check that it was merged
+nrow(wgs84spat)
+nrow(nad2wgs)
+nrow(pm25dataPrj)
+
+class(pm25dataPrj)# Check that the file is the correct object file (sf)
+```
+
+4.6. Remove unneeded objects to release memory. These are objects that we won't use anymore.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(nad2wgs, nad83prj, nad83spat, nadSubset, pm25data, wgs84prj, wgs84spat, wgsSubset)
+```
+
+4.7. Plot spatial objects
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(pm25dataPrj["Arithmetic.Mean"])
+```
+
+### 5. Produce a database with elevation data for each data point in in the Philadelphia regional area
+
+5.1. Download raster data sets representing elevation. Elevation files cover an area of 5x5 degrees so..
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+elev1=elevation_3s(-72, 38, wd)
+elev2=elevation_3s(-77, 38, wd)
+elev3=elevation_3s(-72, 42, wd)
+elev4=elevation_3s(-77, 42, wd)
+
+# You can check that the files are dowloaded to your working directory
+dir()
+dir(paste(wd, "elevation", sep="/"))
+```
+
+5.2. The objects are imported as a SpatRaster object
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+class(elev3)
+elev3
+plot(elev3)
+```
+
+5.3. Combine all the rasters in one single file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+elev=merge(elev1, elev2, elev3, elev4)
+plot(elev)
+```
+
+Remove unnecessary objects
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(elev1, elev2, elev3, elev4)
+```
+
+5.4. Subset the spatial object with the points measuring Pm2.5 to the extent of the elevation data.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Before subseting, we should make sure that both data files are in the same coordinate system
+crs(pm25dataPrj)
+crs(elev)
+crs(pm25dataPrj)==crs(elev)
+
+# Since they are not in the same coordinate system, one of them needs to be reprojected:
+pm25dataPrj2=st_transform(pm25dataPrj, crs(elev))
+crs(pm25dataPrj2)==crs(elev)
+
+#Let's first convert the sf object to a terra object. Notice that the new object has a different class
+pm25t=vect(pm25dataPrj2) #convert to terra format
+class(pm25dataPrj)
+class(pm25t)
+pm25t
+plot(pm25t)
+
+# Let's compare the spatial extent of the Pm2.5 data with the one of the elevation data
+ext(pm25t)
+ext(elev)
+
+pm25tSub=crop(pm25t, ext(elev))
+plot(pm25tSub)
+nrow(pm25tSub)
+```
+
+5.5.Plot the elevation map and add the vector points. Then save the plot as pdf
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(elev)
+plot(pm25tSub, add=TRUE)
+
+pdf(file="PM25perElevation.pdf")
+plot(elev)
+plot(pm25tSub, add=TRUE)
+dev.off()
+```
+
+5.6.Save the resulting spatial objects to the disk
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeVector(pm25tSub, "pm25tSub", filetype="ESRI Shapefile")
+writeRaster(elev, "elev.tiff")
+```
+
+## Lab instructions
+
+1. Download from the link below the air emissions inventory from the State of Utah as shapefile: https://hub.arcgis.com/datasets/utah::utah-daq-air-emissions-inventory/explore?location=19.753595%2C-112.283511%2C4.95
+
+The link does not provide an url so you will need to download the file directly from the website. Then setup the folder where the files are contained as your working directory (step 2). 
+
+2. Modify step 3.2 to load the shapefile instead of a csv file by using the following function:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+data=st_read("DAQAirEmissionsInventory.shp")
+```
+
+3. Adapt the function elevation_3s()in step 5.1. to download elevation data that includes longitudes between -105 and -115 and latitude between 35 and 45. Then merge the data using the merge funtion (step 5.3). You will need to download and merge 4 elevation files in total.
+
+4. Use the function st_transform() in step 5.4 to reproject the point data using the projection of the elevation data as the reference. Theb use the function vect() to transform the data into terra format
+
+5. Adapt the code in step 5.5 to plot the elevation data and overlay the point data as a pdf .
+
+## Lab deliverables
+
+1. Load the resulting pdf file in the Module 2 section in canvas (2.5 pt).
+
+2. Complete the four questions in the following form regarding your concept for the final project: https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUNkJOQUhMQktNMlAyN0RCVUhMN0hXRk5RMy4u (1.5 pt).
+
+

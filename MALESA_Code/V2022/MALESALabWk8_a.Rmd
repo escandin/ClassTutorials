@@ -1,0 +1,207 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 8: Supervised classification'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goals
+To learn how to fit a supervised classification and then use it to produce predictions using different machine learning algorithms.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use sample data on four vegetation community types to produce a classified map in a region in Kyrgyzstan.
+
+
+Have fun!
+
+### 1. System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week9")
+setwd(wd)
+library(terra)
+library(sf)
+library(ggplot2)
+library(DataExplorer)
+library(randomForest)
+library(gbm)
+library(e1071)
+library(rpart)
+library(rattle)
+```
+
+#### Load spatial files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+kgz=rast("RasterStack_KGZ.tiff")
+names(kgz) = c("Aspect", "B2_Ref", "B3_Ref", "B4_Ref", "B5_Ref",
+               "B6_Ref", "B7_Ref", "DEM", "SettlementDistance", 
+               "LS_Factor", "NDVI", "NDWI", "Sky_View_Factor",
+               "Slope", "Topographic_Wetness_Index", "Valley_Depth") 
+
+classes=st_read("Vegetation Plots.shp")
+classes=vect(classes)
+```
+
+#### Extract data to dataframe for modeling
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sampdata=terra::extract(kgz, classes, xy=TRUE)
+sampdata$veg=classes$Vegetation
+sampdata=subset(sampdata, complete.cases(sampdata))
+sampdata$veg=as.factor(sampdata$veg)
+```
+
+#### Explore the data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot_bar(sampdata)
+
+ggplot(sampdata, aes(x = veg, y = DEM)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = NDWI)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = B5_Ref)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = Slope)) + geom_boxplot()
+```
+
+#### Data preparation
+Subset data before modeling to remove irrelevant variables and also to make the variables in the dataframe match the variables in the raster stack
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sampdata=sampdata[,-c(1, 18:19)]
+```
+
+Normalize your data. This is imperative for some ML methods such as SVM and kNN. From lab 5
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+zscore=function(x){
+  zval=(x-mean(x))/sd(x)
+  return(zval)
+}
+
+for(xval in 1:(ncol(sampdata)-1)){
+  sampdata[,xval]=zscore(sampdata[,xval])
+}
+```
+
+#### Fit different ML methods
+
+##### Decission trees
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dt=rpart(veg~., data=sampdata, method="class")
+# Check the arguments for rpart.control
+# Explain the tree outputs
+
+#printcp(dt) #displays the results
+#plotcp(dt)
+#summary(dt)
+dt$variable.importance
+plot(dt, uniform=TRUE, 
+     main="Classification Tree for plants")
+text(dt, use.n=TRUE, all=TRUE, cex=.8)
+fancyRpartPlot(dt, caption = NULL)
+
+#Pruning the tree
+dt$cptable
+printcp(dt)
+plotcp(dt)
+dtprune=prune(dt, cp= dt$cptable[which.min(dt$cptable[,"xerror"]),"CP"])
+
+# plot the pruned tree 
+plot(dtprune, uniform=TRUE, 
+     main="Pruned Classification Tree for vegetation communities")
+text(dtprune, use.n=TRUE, all=TRUE, cex=.8)
+```
+
+##### Random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rf=randomForest(veg~., data=sampdata, ntree=200, importance=TRUE)
+rf
+rf$importance
+varImpPlot(rf)
+```
+
+##### Gradient boosting machine 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+gb <- gbm(
+  formula = veg ~ .,
+  distribution = "multinomial",
+  data = sampdata,
+  n.trees = 10000,
+  interaction.depth = 1,
+  shrinkage = 0.001,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)  
+
+# You can see that the multinomial option is broken
+# Let's convert it to a binomial prediction by predicting just one vegetation community
+sampdata$AcoPra=rep(NA, nrow(sampdata))
+sampdata$AcoPra[sampdata$veg=="Aco-Pra"]=1
+sampdata$AcoPra[sampdata$veg!="Aco-Pra"]=0
+sampsub=sampdata[,-17]
+gb <- gbm(
+  formula = AcoPra ~ .,
+  distribution = "bernoulli",
+  data = sampsub,
+  n.trees = 10000,
+  interaction.depth = 1,
+  shrinkage = 0.001,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)  
+
+print(gb)
+gbm.perf(gb, method = "cv") # Optimal number of iterations
+
+# Variable importance
+summary(
+  gb, 
+  cBars = 10,
+  method = relative.influence, # also can use permutation.test.gbm
+  las = 2
+)
+
+```
+
+#### Produce predictions and save them
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dtpred=terra::predict(kgz, dt)
+plot(dtpred)
+
+rfpred=terra::predict(kgz, rf)
+plot(rfpred)
+
+gbpred=terra::predict(kgz, gb, type="response")
+plot(gbpred)
+
+writeRaster(dtpred, "dtpred.tif")
+writeRaster(rfpred, "rfpred.tif")
+writeRaster(gbpred, "gbpred.tif")
+```
+
+#### Lab report
+Instructions for this lab report will be provided next week, after overviewing supervised regression

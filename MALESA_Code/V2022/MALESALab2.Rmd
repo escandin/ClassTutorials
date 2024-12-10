@@ -1,0 +1,121 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 2: R environment and objects'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/MALESA/2022Fall/Class1/"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 12 2022
+
+## Goal
+To learn how to download and pre-process spatial data for machine learning application.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+I strongly recommend this introductory R book: https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf 
+
+Have fun!
+1. Define environment and load required libraries
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Documents/Courses/MALESA/2022Fall/Class2/Lab2"
+setwd(wd)
+library(sf)
+library(terra)
+library(osmdata)
+```
+
+12. Download osm data. Check all the available features in osm data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+available_features()
+```
+
+You can also check all the tags within each feature
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+available_tags("highway")
+```
+
+Let's first create a bounding box of the extent covered by our point file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+emat=t(matrix(e, 2, 2))
+ematsub=t(matrix(c(-82.82822,-81, 37.66454 , 40),2,2))
+rownames(ematsub)=c("x","y")
+colnames(ematsub)=c("min", "max")
+ematsub
+
+ways<- ematsub %>%
+  opq() %>%
+  add_osm_feature(key = "highway") %>%
+  osmdata_sf()
+
+ways$osm_lines
+
+ggplot() +
+  geom_sf(data =ways$osm_lines)
+```
+
+Another option is to download the file from http://download.geofabrik.de 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+download.file("http://download.geofabrik.de/north-america/us/new-york-latest-free.shp.zip", paste(wd, "new-york-latest-free.shp.zip", sep="/"))
+
+download.file("http://download.geofabrik.de/north-america/us/pennsylvania-latest-free.shp.zip", paste(wd, "pennsylvania-free.shp.zip", sep="/"))
+
+dir.create(paste(wd, "NY", sep="/"))
+dir.create(paste(wd, "PA", sep="/"))
+unzip("new-york-latest-free.shp.zip",exdir= paste(wd, "NY", sep="/") )
+unzip("pennsylvania-free.shp.zip", exdir= paste(wd, "PA", sep="/") )
+```
+
+13.Open the roads file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+NYroads=vect(paste(paste(wd, "NY", sep="/"), "gis_osm_roads_free_1.shp", sep="/"))
+PAroads=vect(paste(paste(wd, "PA", sep="/"), "gis_osm_roads_free_1.shp", sep="/"))
+```
+
+14. Plot everything
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(elev)
+plot(pm25tSub, add=TRUE)
+plot(NYroads, add=TRUE)
+plot(PAroads, add=TRUE)
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```

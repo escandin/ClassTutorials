@@ -1,0 +1,164 @@
+---
+title: 'Advanced Remote Sensing Lab 3: Spatial segmentation, object-based analyses, and contextual metrics'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+### Lab due
+Febraury 16 2021
+
+### Goals
+1. 
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="//Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session4_SegmentationTextural"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "SelEdit.png", sep="/")
+fig2path=paste(wd, "Sel2Edit.png", sep="/")
+fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab instructions
+
+### 1. Environment setup and data loading
+Use the image corresponding to the spectral unmixing results from lab 3. You can download mine from the session 4 module in canvas: PENDING
+
+Save downloaded image in a folder that you will use as a working directory. 
+
+Setup working directory and load required libraries. In my case I saved it here: "/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session4_SegmentationTextural".
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+setwd("/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session4_SegmentationTextural")
+library(raster)
+library(OpenImageR)
+library(randomForest)
+library(RStoolbox)
+library(dplyr)
+```
+
+Open and plot image.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+l8unmix=stack("unmixPCA.tif")
+plotRGB(l8unmix, r=1, g=2, b=3, stretch="lin")
+```
+
+#### 2. Segment the image
+The package to be used for segmentation only recognizes images in JPEG format. Here we will convert the image from raster to JPEG format while conserving the original dimensionality.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nrows=l8unmix@nrows
+ncols=l8unmix@ncols
+jpeg("Unmix.jpg", width = ncols, height = nrows)
+plotRGB(l8unmix, r=1, g=2, b=3, stretch="lin")
+dev.off()
+```
+
+We will use the super-pixels method. Modify the superpixel argument until you obtain satisfactory results. Larger values translate into more and smaller superpixels.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rgb <- readImage("Unmix.jpg")
+seg = superpixels(input_image =rgb, method = "slic", superpixel = 500,
+                          compactness = 30, return_slic_data = TRUE, 
+                          return_labels = TRUE, write_slic = "", verbose = FALSE)
+imageShow(seg$slic_data)
+```
+
+#### 3. Perform an unsupervised classification
+We will try to methods. The first one is k-means
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Extract pixel values and remove any NA
+UnmixVal=getValues(unmixPCA)
+i <- which(!is.na(UnmixVal))
+UnmixVal <- na.omit(UnmixVal)
+
+# perform a k-means classification
+E <- kmeans(UnmixVal, 12, iter.max = 100, nstart = 10)
+kmeans_raster <- raster(unmixPCA)
+kmeans_raster[i] <- E$cluster
+```
+
+The second method combines k-means classification with unsupervised rando forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Perform a random forest classification with k-means
+sampval<-UnmixVal[sample(nrow(UnmixVal), 500),]
+rf_raster<- predict(unmixPCA,rf) #unsupervised rf
+rf_prox <- randomForest(sampval,ntree = 1000, proximity = TRUE)$proximity
+
+E_rf <- kmeans(rf_prox, 12, iter.max = 100, nstart = 10)
+rf <- randomForest(sampval,as.factor(E_rf$cluster),ntree = 500)
+rf_raster<- predict(unmixPCA,rf)
+```
+
+Let's plot both results using an optimized color palette
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# produce optimal colors to plot the map
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+colors=sample(col_vector, n)
+
+# plot classifications with optimal colors and compare with the original image
+plot(kmeans_raster, col=colors)
+plot(rf_raster, col=colors)
+plotRGB(unmixPCA, r=1, g=2, b=3, stretch="lin")
+```
+
+#### 4. Assign the majority class to all pixels in each segment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Explore the structure of objects based on the original blog
+str(unmixPCA)
+str(rgb)
+str(seg)
+
+# sort the number of segments
+sort(unique(as.vector(seg$labels)))
+
+# Convert regions into raster
+regionsrast=raster(seg$labels, unmixPCA[[1]])
+
+# Assign to each segment the majority class in the unsupervised classification
+rf_rasterVal=getValues(rf_raster)
+
+# obtain the majority value for each segment
+dataset=data.frame(cbind(rf_rasterVal, as.vector(t(seg$labels))))
+names(dataset)=c('category', "item")
+
+# Define a function to calculate majority per segment
+g <- function(number) {
+  ux <- unique(number)
+  ux[which.max(tabulate(match(number, ux)))]
+}
+
+# Apply function to all segments and plot them
+modes_by_cat <- summarise(group_by(dataset, item), group_mode = g(category))
+out=inner_join(dataset, modes_by_cat)
+val=out$group_mode
+testrast=setValues(unmixPCA[[1]], val)
+#testrast=setValues(imgCrop[[1]], testval)
+plot(testrast, col=colors)
+imageShow(seg$slic_data)
+```
+
+#### Homework
+
+Download the image "PENDING" from the session 3 module in canvas: PENDING. Then adapt the code presented in sections ... in the lab instructions to ...
+
+#### Sources
+Here are some online sources consulted for developing this lab code:
+https://www.r-bloggers.com/2020/03/analyzing-remote-sensing-data-using-image-segmentation/
+http://remote-sensing.org/unsupervised-classification-with-r/ 
+https://stackoverflow.com/questions/3823211/convert-a-matrix-to-a-1-dimensional-array

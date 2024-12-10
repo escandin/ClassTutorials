@@ -1,0 +1,188 @@
+---
+title: 'Remote Sensing Lab 5: Topographic correction
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class6/Lab6Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+October 7, 2021
+
+## Goals
+
+1.	To learn how to align and mask images with different geographic projections and spatial resolutions.
+2.	To master methods for topographic adjustment to spectral satellite images.
+4.	To learn how to mitigate illumination effects in the spectral characteristics of satellite imagery from mountainous areas. 
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+
+### Download images
+1. Go to earthexplorer.usgs.gov. Enter “Hanzhong” as the Feature Name and "China" as the country in the search criteria. In datasets select:
+a. Landsat > Landsat Collection-2 Level-2 > Landsat 8 OLI/TIRS C2 L2
+
+b. Digital Elevation > SRTM > SRTM 1 Arc-Second Global.
+
+2. In results, select Landsat as the dataset and download the image corresponding to path 128, row  37 from 2020/06/03.  Download the product bundle.
+
+3. Select SRTM as the dataset and download the only image available. It should correspond to the  coordinates 33, 107. Download the GEOTIFF product.
+
+### Image processing
+
+Open R Studio, open a new R script and change the route to your working directory in the script using the function setwd().
+
+Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+1. Install and load required libraries.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+install.packages("REdas")
+library(raster)
+library(rgdal)
+library(RStoolbox)
+library(REdaS)
+```
+
+2. Set working and temporary directories: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class6/Lab6Materials"
+setwd(wd)
+dir.create('tempfiledir')
+tempdir=paste(getwd(),'tempfiledir', sep="/")
+rasterOptions(tmpdir=tempdir)
+```
+
+3. Decompress, open, and stack bands 1 through 7 from the Landsat image
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tars <- list.files('.', pattern='tar')
+tars
+untar(tars[1])
+
+TIFS=list.files(wd, pattern=".TIF")
+TIFS
+# Make sure the numbers corresponding to the names of bands 2 to 7 in the tifs object
+L8=stack(TIFS[c(3:9)]) 
+
+plotRGB(L8, r=5, g=4, b=3, stretch="lin")
+```
+
+4. Open and project SRTM image. Then plot it.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# This produces a different object because R is case sensitive.
+tifs=list.files(wd, pattern=".tif")
+tifs
+srtmName=tifs[1]
+
+srtm=raster(srtmName)      
+srtm
+plot(srtm)
+```
+
+5. Resample the SRTM image so that it has the same projection system: Notice that the two images have different coordinate systems:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Check that the coordinate system and pixel size of Landsat and SRTM are very different
+crs(L8)
+crs(srtm)
+res(L8)
+res(srtm)
+```
+
+We can use the projectRaster() function to project srtm to the geographic parameters of the Landsat image. Notice that Landsat and srtm have now the same geographic projection and pixel size.  When you plot the srtmPrj image you can see that it covers the extent of the Landsat image but it only contains valid information in the geographic extent of the original srtm image.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+srtmPrj=projectRaster(srtm, L8)
+crs(L8)
+crs(srtmPrj)
+
+res(L8)
+res (srtmPrj)
+plot(srtmPrj)
+```
+
+6. Resize images to a common extent: Let's use the function crop to reduce the area of the srtmPrj object to the extent covered by the original image. 
+
+We will also crop the Landsat image so that we only use the overlapping area between the two images
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+e=drawExtent()
+srtmPrj=crop(srtmPrj, e)
+L8rsz=crop(L8, e)
+plot(srtmPrj)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+# Remove elements to release memory
+rm(L8, srtm)
+```
+
+7.  Mask images to a common valid domain: You will notice in the RGB plot above that the resizsed Landsat contains background pixels with no valid information. We therefore need to produce a common mask that excludes pixels with no valid information in at least one of the images.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+m=c(-Inf,0,NA, 0,Inf,1)
+reclassmatrix=matrix(m, ncol=3, byrow=TRUE)
+L8msk=reclassify(L8rsz, reclassmatrix)
+L8msk=Reduce(f="*", as.list(L8msk))
+srtmsk=reclassify(srtmPrj, reclassmatrix)
+
+msk=L8msk*srtmsk
+plot(msk)
+
+L8mskd=mask(L8rsz,msk)
+srtmskd=mask(srtmPrj, msk)
+
+plotRGB(L8mskd, r=5, g=4, b=3, stretch="lin")
+plot(srtmskd)
+
+# Remove elements to release memory
+rm(msk, L8msk,srtmsk, L8rsz, srtmPrj)
+```
+
+8. Calculate terrain variables from the DEM.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+slope=terrain(srtmskd, opt='slope')
+aspect=terrain(srtmskd, opt='aspect')
+terrainvar=stack(slope,aspect)
+names(terrainvar)=c('slope', 'aspect')
+rm(slope,aspect)
+```
+
+9. Calculate illumination. This code simulates the shading of the sun according to the illumination geometry at the time of image acquisition. For that, you will need to retrieve the sun azimuth and elevation data from the metafile that comes with the Landsat image. The metadata information is provided with the suffix  _MTL.txt or _MTL.xml file.
+
+If you read the documentation for the function, youy will find that it requires the angles to be expressed in radians but the information provided by the metadata comes in degrees. You can use the deg2rad() function to perform the conversion:
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+illuGeom=c(deg2rad(114.68025538),deg2rad(90-68.42711855))
+shade=topCor(L8mskd, dem=terrainvar, solarAngles=illuGeom, method="illu")
+plot(shade)
+```
+
+10.  Apply topographic correction
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8cor=topCor(L8mskd, dem=terrainvar, solarAngles=illuGeom, method="C")
+
+pdf("VGutierrez_Lab6.pdf")
+  plotRGB(L8mskd, r=5, g=4, b=3, axes=FALSE, stretch="lin")
+  plotRGB(L8cor, r=5, g=4, b=3, axes=FALSE, stretch="lin")
+dev.off()
+```
+
+## Lab 6 deliverables
+
+Adapt the script to apply topographic correction to the “Rocky Mountains”. The Landsat image corresponds to path 38 row 29 from 2020/09/16. The SRTM image correspond to the coordinates 44, -110.
+
+Upload to module 6 in canvas, two RGB map composites representing the pixel values for bands 543 from Landsat before and after topographic correction for the Rocky mountains (step 8). Change the name of the pdf file for your Last name First initial and the name of the lab assignment ("GutierrezV_Lab6.pdf"") before submission (4 pts).

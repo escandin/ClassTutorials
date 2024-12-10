@@ -1,0 +1,517 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 11: Supervised Regression'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goals
+To learn:
+1. How to fit and interpret a supervised regression using tree based methods and 
+2. How to use the fitted model to produce spatial predictions.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use data from forest inventories predicting aboveground biomass for the year 2019 in the state of NY. Data were obtained from the US Forest Inventory Data: https://www.fs.usda.gov/research/products/dataandtools/forestinventorydata
+
+
+Have fun!
+
+### 1. System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week11_SuperReg")
+setwd(wd)
+library(terra)
+library(sf)
+library(ggplot2)
+library(corrplot)
+library(DataExplorer)
+library(caret)
+library(summarytools)
+library(randomForest)
+library(gbm)
+library(e1071)
+library(xgboost)
+library(purrr)
+library(geodata)
+library(leaflet)
+library(tidycensus)
+library(tigris)
+library(dplyr)
+library(prism)
+library(iml)
+prism_set_dl_dir(wd)
+```
+
+#### Load and format sampled datafiles
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dataset=read.csv("plots.csv")
+names(dataset)
+```
+
+Subset the data for a given year and then convert it into a spatial object
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dataset=dataset[dataset$yr==2019,] # select data from 2019 only
+summary(dataset$yr)
+SpatData=st_as_sf(dataset, coords=c("long", "lat"), crs=st_crs("EPSG:4326"))
+plot(SpatData["agb"], type="p", pch=4)
+```
+
+Let's explore the distribution of plot locations using leaflet
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datasetPrj=st_transform(SpatData, "EPSG:4326")
+
+# Extract coordinates from the point sf object
+coords <- st_coordinates(datasetPrj)
+
+# Add the coordinates back as columns in the sf object
+datasetPrj$lon <- coords[, 1]  # Longitude
+datasetPrj$lat <- coords[, 2]  # Latitude
+
+# Now create the leaflet map using the extracted coordinates
+leaflet() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>%
+  
+  # Add the point layer using the preprocessed longitude and latitude
+  addCircleMarkers(lng = ~lon, lat = ~lat,  # Use the new lon and lat columns
+                   data = datasetPrj, 
+                   color = "red", radius = 1, popup = ~as.character(agb)) %>%
+  
+  # Set the view of the map
+  setView(lng = -76, lat = 43, zoom = 7)
+```
+
+Download and format input spatial variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+### Boundaries of NY State as the study area
+options(tigris_class = "sf")
+nyBound <- states(cb = TRUE, year = 2022) %>%
+  filter(NAME == "New York")
+
+### Topography
+elev1=elevation_3s(-72, 42, wd)
+elev2=elevation_3s(-77, 42, wd)
+elev3=elevation_3s(-72, 47, wd)
+elev=merge(elev1, elev2, elev3)
+plot(elev)
+#writeRaster(elev, "elev.tif")
+
+# Project study area and sampled data using elevation as the reference
+crs(nyBound)==crs(elev)
+nyBound=terra::project(vect(nyBound), elev)
+plot(elev)
+plot(nyBound, add=T)
+
+# Crop elevation to th eztent of NYC
+elev=crop(elev, nyBound)
+plot(elev)
+plot(nyBound, add=T)
+
+crs(elev)==crs(SpatData)
+SpatDataPrj=terra::project(vect(SpatData), elev)
+plot(elev)
+plot(SpatDataPrj, add=T)
+rm(SpatData, elev2)
+writeVector(SpatDataPrj, "SpatDataPrj", filetype="ESRI Shapefile")
+
+# Derive terrain variables from the elevation map
+tervar=terrain(elev, v=c("slope", "aspect", "roughness", "TRI", "TPI", "flowdir"), filename="tervar.tif")
+tervar=c(elev, tervar)
+names(tervar)=c("elevation", "slope", "aspect", "roughness", "TRI", "TPI", "flowdir")
+terra::writeRaster(tervar, "tervar1.tif", overwrite=T)
+plot(tervar)
+rm(elev)
+
+### Canopy height from https://glad.umd.edu/dataset/gedi
+
+# Copy this link and paste it in your browser to download the file: https://glad.geog.umd.edu/Potapov/Forest_height_2019/Forest_height_2019_NAM.tif
+
+# Open, project and resize file
+ch=rast("CH.tif")
+plot(ch)
+
+crs(ch)==crs(tervar)
+ch=project(ch, tervar)
+plot(ch)
+plot(nyBound, add=T)
+writeRaster(ch, "chprj.tif")
+
+              
+### Tree cover for from here: https://www.mrlc.gov/data?f%5B0%5D=category%3ATree%20Canopy 
+# Copy the following link and paste it in your browser: https://s3-us-west-2.amazonaws.com/mrlc/nlcd_tcc_CONUS_2019_v2021-4.zip
+unzip("nlcd_tcc_CONUS_2019_v2021-4.zip")
+TC=rast("nlcd_tcc_conus_2019_v2021-4.tif")
+crs(TC)==crs(tervar)
+TC=terra::project(TC, tervar, method="near")
+plot(TC)
+plot(nyBound, add=T)
+
+# We need to change the layer from categorical to numerical to make the file compatible with modeling
+TC=as.numeric(TC)
+TC[TC==255]<-NA
+plot(TC)
+
+writeRaster(TC, "TCprj.tif")
+#rm(LC, tree, imp)
+#LCdata=rast("LCdata.tif")
+#LCdata=terra::project(LCdata[[1]], elev, method="near")
+
+# Climate data
+get_prism_annual(type="tmin", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="tmax", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="tmean", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="tdmean", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="vpdmin", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="vpdmax", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="ppt", years = 2019, keepZip = TRUE, keep_pre81_months = FALSE)
+
+prisms <- list.files('.', pattern='_stable_4kmM3_2019_bil')
+
+# Go to subfolders and reproject each dataset
+for (i in seq(1,length(prisms), by=2)){
+  prisrast=rast(paste0(wd, "/", prisms[i], "/", prisms[i], ".bil"))
+  prisrast=project(prisrast, tervar)
+  if(i==1){pristack=prisrast} else {pristack=c(pristack, prisrast)}
+}
+names(pristack)=substr(prisms[seq(1,length(prisms), by=2)], start=7, stop=10)
+
+# shorten names for prism
+names(pristack)= gsub("PRISM_|_stable_4kmM3_2019_bil", "", names(pristack))
+plot(pristack)
+writeRaster(pristack, "pristack1.tif", overwrite=T)
+```
+
+Stack all data in a single raster object
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Load files (If they are not already in the environment)
+tervar=rast("tervar1.tif")
+pristack=rast("pristack1.tif")
+ch=rast("chprj.tif")
+TC=rast("TCprj.tif")
+plot(TC)
+
+# Convert background pixels to (255) in tree cover map
+tree[tree<0]=NA 
+tree[tree>100]=NA 
+
+datastack=c(pristack, tervar, ch, TC)
+names(datastack)=c(names(pristack), names(tervar), "ch", "tc")
+
+# remove out of bound pixels
+nyBoundRast=terra::rasterize(nyBound, datastack)
+datastack=datastack*nyBoundRast
+plot(datastack)
+
+writeRaster(datastack, "datastack.tif")
+#rm(elev,tree, pristack, tervar)
+```
+
+##### Extract data into database
+In order to expedite the running of the algorithms, I will subset the datasets before continuing.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# #SpatDataPrj=vect(paste0(wd, "/SpatDataPrj/SpatDataPrj.shp"))
+# #datastack =rast("datastack.tif")
+# names(datastack)
+# plot(datastack[[15]])
+# plot(SpatDataPrj, add=T)
+# ext=terra::draw()
+# 
+# # For some reason is not allowing me to crop the whole dataset at once
+# datastack=crop(datastack, ext)
+# SpatDataPrj=terra::crop(SpatDataPrj, ext)
+# 
+# plot(datastack[[15]])
+# plot(SpatDataPrj, add=T)
+
+# Make sure the names in the datastack are properly labeled and that the projection matches with 
+names(datastack)
+crs(datastack)==crs(SpatDataPrj)
+refdata=extract(datastack, SpatDataPrj)
+nrow(refdata)
+nrow(SpatDataPrj)
+refdata=cbind(SpatDataPrj$agb, refdata)
+
+# Make sure that the column names have the proper name
+names(refdata)
+names(refdata)[1]="agb"
+save(refdata,file="refdata.RData")
+
+refdatasub=refdata[,-2] # remove column representing ID
+```
+
+#### Explore the data and select variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+refdata %>%
+    create_report(
+        output_file = paste("Report", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), sep=" - "),
+        report_title = "EDA Report - Plant communities",
+        y = "agb"
+    )
+```
+Based on the results of my EDA,these are the variables that I will select
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+response <- "agb"
+selvar=c("ppt", "tmin", "vpdmax", "elevation", "slope", "ch", "tc")
+```
+
+#### Clean the data
+There are missing observations that we have to remove
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+refdatasub=refdata[,-2] # remove column representing ID
+refdatasub=subset(refdatasub, complete.cases(refdatasub)) # remove missing data
+```
+
+#### Fit different ML methods
+WARNING 1: The most important task for the succesful run of the different algorithms is to make sure that input data is in the format accepted for data arguments.
+
+##### Random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+eq=as.formula((paste0(response, "~", (paste(selvar, collapse = " + ")))))
+rf=randomForest(eq, data=refdatasub, ntree=1000)
+rf
+rf$importance
+varImpPlot(rf)
+```
+
+##### Extreme boosting machine via xgboost
+https://xgboost.readthedocs.io/en/stable/tutorials/model.html 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+refdataX=refdatasub[c(selvar)]
+
+#sampdataX_scaled <- scale(sampdataX)
+agb=refdatasub$agb
+
+dtrain <- xgb.DMatrix(data = as.matrix(refdataX), label = agb, missing = NA)
+
+# Set parameters for the model
+param <- list(
+  objective = "reg:squarederror",  # regression squared loss
+  eta = 0.1,  # learning rate
+  max_depth = 6, # maximum depth of the tree
+  eval_metric = "rmse"  # Error rate
+)
+
+# Train the model using xgb.train()
+xgb_model <- xgb.train(params = param, data = dtrain, nrounds = 500, nthread = 6)
+
+# Variable importance
+importance <- xgb.importance(feature_names = colnames(refdataX), model = xgb_model)
+head(importance)
+xgb.plot.importance(importance_matrix = importance)
+```
+
+##### Support Vector Machines
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+
+# You should always normalize your data before doing SVM and kNN!! 
+# From lab 5:
+zscore=function(x){
+  zval=(x-mean(x, na.rm=TRUE))/sd(x, na.rm=TRUE)
+  return(zval)
+}
+refdataZ=data.frame(apply(refdataX, 2, FUN=zscore))
+refdataZ=cbind(agb,refdataZ)
+names(refdataZ)
+str(refdataZ)
+summary(refdataZ)
+
+sv = svm(agb~., data = refdataZ, type = 'eps-regression', kernel = "sigmoid", cost = 10, scale = FALSE)
+print(sv)
+
+# I will clean up the graphical settings to make sure the plot below runs smoothly
+
+while (!is.null(dev.list()))  dev.off()
+dev.new()
+
+# Plotting the SVM regression
+if("elevation" %in% names(refdataZ)) {
+  plot(refdataZ$ch, refdataZ$agb, main = "SVM Regression Plot",
+       xlab = "Elevation", ylab = "AGB")
+  points(refdataZ$elevation, predict(sv, refdataZ), col = "blue", pch = 16)
+} else {
+  print("Column 'elevation' not found in refdataZ")
+}
+
+# Blue line indicates the regression line or surface that the SVM model learned
+
+# Fit Support Vector Machine model to data set
+svtune <- tune(svm, agb~., data = refdataZ, kernel = "sigmoid",
+               ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+# extract the best model
+bestmod <- svtune$best.model
+plot(svtune, main = "SVM Tuning Results")
+
+# Get predictions from the best model
+predictions <- predict(bestmod, refdataZ)
+
+# Plot actual vs. predicted values
+plot(refdataZ$agb, predictions, 
+     xlab = "Actual AGB", ylab = "Predicted AGB", 
+     main = "Actual vs. Predicted AGB")
+abline(0, 1, col = "red")  # Add a 45-degree line for reference
+
+```
+
+#### Evaluate marginal effects
+
+##### For random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+### For one predictor
+
+# Define predictor object for the model
+predictor_rf <- Predictor$new(rf, data = refdataX, y = agb)
+
+# Plot marginal effects for a specific feature
+effect <- FeatureEffect$new(predictor_rf, feature = "ch", method = "pdp")
+plot(effect)
+
+effect2 <- FeatureEffect$new(predictor_rf, feature = "tc", method = "pdp")
+plot(effect2)
+
+effect3 <- FeatureEffect$new(predictor_rf, feature = "slope", method = "pdp")
+plot(effect3)
+
+effect4 <- FeatureEffect$new(predictor_rf, feature = "tmin", method = "pdp")
+plot(effect4)
+
+effect5 <- FeatureEffect$new(predictor_rf, feature = "ppt", method = "pdp")
+plot(effect5)
+
+### For two predictors
+pdp_two_features_rf <- FeatureEffect$new(predictor_rf, 
+                                         feature = c("slope", "tmin"), 
+                                         method = "pdp")
+
+# Plot the 2D PDP
+plot(pdp_two_features_rf)
+```
+
+##### For xgboost
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Prepare the Predictor object from iml package
+predictor_xgb <- Predictor$new(
+  xgb_model, 
+  data = as.data.frame(refdataX), 
+  y = labels, 
+  predict.function = function(model, newdata) {
+    as.numeric(predict(model, as.matrix(newdata)))  # Ensure single-column output
+  }
+)
+
+# Create a partial dependence plot for a single feature
+pdp_iml <- FeatureEffect$new(predictor_xgb, feature = "tmin", method = "pdp")
+plot(pdp_iml)
+
+### For two predictors
+# Define train_data if not already defined
+train_data <- as.data.frame(refdataX)
+
+# Assuming `labels` contains the target variable
+predictor_xgb <- Predictor$new(
+  xgb_model, 
+  data = train_data, 
+  y = labels, 
+  predict.function = function(model, newdata) {
+    as.numeric(predict(model, as.matrix(newdata)))
+  }
+)
+
+# Generate a partial dependence plot for two features
+pdp_iml_two <- FeatureEffect$new(
+  predictor_xgb, 
+  feature = c("slope", "elevation"),  # Specify the two features here
+  method = "pdp"
+)
+
+# Plot the PDP for two features
+plot(pdp_iml_two)
+```
+
+
+#### Produce predictions and save them
+Let's first extract the data from the raster to a dataframe
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datastackdf=datastack[[selvar]] # select from the stack a subset of bands corresponding to the variables selected for modeling
+datastackdf = as.matrix(datastackdf, mode="numeric")
+datastackdf=subset(datastackdf, complete.cases(datastackdf))
+```
+
+##### Random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rfpred=terra::predict(datastack, rf)
+plot(rfpred)
+writeRaster(rfpred, "rfrast.tif")
+```
+
+##### XGBoost
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Make sure that colnames are the same in raster and dataframe and correct if needed
+colnames(datastackdf)==colnames(refdataX)
+
+xgbpred <- stats::predict(xgb_model, datastackdf)
+xgrast=sum(datastack)
+xgrast[!is.na(xgrast)] <- 1
+xgrast[!is.na(xgrast)] <- xgbpred
+plot(xgrast)
+writeRaster(xgrast, "xgbrast.tif")
+```
+
+##### SVM
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Standardize values in the raster stack so that the format is the same as the data used for calibrating the algorithm
+datastackdfz=apply(datastackdf, 2, FUN=zscore)
+colnames(datastackdfz)==colnames(refdataZ)[2:ncol(refdataZ)]
+svm.pred <- predict(sv, datastackdf)
+svmrast=sum(datastack)
+svmrast[!is.na(svmrast)] <- 1
+svmrast[!is.na(svmrast)] <- svm.pred
+plot(svmrast)
+writeRaster(svmrast, "svmrast.tif")
+```
+
+#### Lab report
+This lab report is due next week (October 12th).
+
+Produce two machine learning models using a) random forest b) another algorithm and use them to predict your response variable in your study area.
+
+To upload in canvas:
+1. A pdf with two maps produced in QGIS or ArcGIS with the predicted value for the response. Make sure to  assign an appropriate palette that enables proper visualization.
+
+2. Figures representing variable importance for both algorithms.
+
+3. Answer to the questions below based on your results:
+
+a. What are the main differences between both predictions in terms of the spatial distribution of the predicted response?
+
+b. What criteria did you use to select the final variables? Which ones did you select?
+
+c. Are the most important variables estimated by both algorithm similar? What are the main differences? 
+
+d. Based on the results of the partial dependence plots, what kinds of hypotheses can you produce about the correlation between the three most important variables and the response?
+
+e. Based on your preliminary evaluation, what do you think is a better algorithm? Please justify.

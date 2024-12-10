@@ -1,0 +1,145 @@
+---
+title: 'Remote sensing lab 5: radiometric normalization'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+## Lab due
+October 02 2024
+
+## Goals
+-To learn how to perform radiometric normalization of satellite images and its applications in remote sensing.
+
+-To become familiar with the rationale and outputs associated with the implementation of a radiometric normalization algorithm.
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/PROJECTS/NASAGeo/MeetingsTeam/Workshop3Colombia/WorkshopTier2/RasterMapR"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+#fig1path=paste(wd, "GEEHelp.png", sep="/")
+#fig2path=paste(wd, "GEECatalog.png", sep="/")
+#fig3path=paste(wd, "GEEWindows.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Background
+
+Radiometric normalization refers to a procedure that expresses pixel values in a target raster image as a function of the radiometric conditions of a reference image. It is used to reduce differences in atmospheric, illumination and other conditions that can produce differences in reflectance not attributed to the inherent reflective properties of ground materials. 
+
+Radiometric normalization can facilitate the production of radiometrically consistent mosaics when data from different dates are needed to cover a given study area. It also helps to produce consistent classification results and extrapolate thematic map results over time. 
+
+Since seasonal differences are inherent to ground conditions, radiometric normalization should not be applied to produce mosaics with data from different seasons. Radiometric normalization works well when the images used for the analysis contain enough pixels representing no change to produce a no change distribution against which change is compared.
+
+For this lab, we will use the rasterMapR package that was developed under my lab. The package is still in a test phase and therefore the compatibility with different software and OS distributions is still being evaluated.
+
+## Instructions
+1. Reproduce the steps for data downloading described in lab 2 to download from Earth explorer (http://earthexplorer.usgs.gov), two contiguous Landsat images from collection 2, level 2. The images correspond to paths 05 and 06, row 057 acquired on January 18 and 25, 2016. The names of the images are LC08_L2SP_005057_20160118_20200907_02_T1 and LC08_L2SP_006057_20160125_20200907_02_T1.
+
+2. Setup working environment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# defina la ruta donde  creará el directorio
+setwd("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class4_RadNorm")
+library(terra)
+library(devtools)
+library(fitdistrplus)
+```
+
+3. Download to your working directory, decompress and install the functions required to run radiometric normalization. You can find the functions in Module 5 in canvas with the name "radNormFunctions.zip. Also,define a folder that you will use for storing temporary files (this is a good practice in case R aborts and you have to delete the files manually). 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Unzip files
+unzip("radNormFunctions.zip")
+
+# Load all the functions in the defined path
+r_files <- list.files(path = getwd(), pattern = "\\.R$", full.names = TRUE)
+sapply(r_files, source)
+```
+
+4.Select a folder as the working directory and make sure the downloaded files are there. The function EEstackWithoutMeta() decompresses images in .tar format and creates a list with each raster stack as a separate element.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir(paste0(getwd(),"/Lab5Data"))
+setwd(paste0(getwd(),"/Lab5Data"))
+tars=list.files('.', pattern='.tar')
+untar(tars[1])
+untar(tars[2])
+
+tifs <- list.files('.', pattern='.TIF')
+tifs # lists all the files in the working folder with the extension .TIF
+tifBandNames1=tifs[c(3:9)] # enter the index position for bands 2 through 7 of the first raster stack
+tifBandNames2=tifs[c(22:28)] # enter the index position for bands 2 through 7 of the second raster stack
+L8b=rast(tifBandNames1)
+L8a=rast(tifBandNames2)
+names(L8a)=tifBandNames2
+names(L8b)=tifBandNames1
+names(L8a)
+names(L8b)
+```
+
+5. Let's plot the files to identify the area in common. Then, let's cut the extent of the images to make the processing faster.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+par(mfrow=c(1,2))
+plotRGB(L8a, r=5, g=4, b=3, stretch="lin")
+plotRGB(L8b, r=5, g=4, b=3, stretch="lin")
+
+par(mfrow=c(1,1))
+plotRGB(L8a, r=5, g=4, b=3, stretch="lin")
+e=draw()
+L8aRsz=crop(L8a, e)
+
+plotRGB(L8b, r=5, g=4, b=3, stretch="lin")
+e=draw()
+L8bRsz=crop(L8b, e)
+
+par(mfrow=c(1,2))
+plotRGB(L8aRsz, r=5, g=4, b=3, stretch="lin")
+plotRGB(L8bRsz, r=5, g=4, b=3, stretch="lin")
+```
+
+6. Perform radiometric normalization using the s3d() function. Then check the plots that are produced once the function finalize running. Let's also check the values of the regression parameters obtained in the output object.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+l8list=list(L8aRsz, L8bRsz) # make sure the first image is the target and the second the reference)
+s3dmod=s3dUpdated(l8list, pval.pif = 1e-01, writemasks=FALSE)
+s3dmod$data
+s3dmod$paramstats
+s3dmod$parameters
+```
+
+7. The CalibrateRaster2Updated() function applies the regression parameters obtained from the s3d() function to calibrate the target image as a function of the reference one:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+calibrated <- CalibrateRaster2Update(s3dmod$parameters, 
+                               L8aRsz)
+```
+
+8. Let's produce two mosaics. One with the unormalize image and the other with the normalized one. Then plot the RGBs to compare the results.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unnorm=merge(L8aRsz, L8bRsz) # merges the two images before normalization
+norm=merge(calibrated, L8bRsz) # merges the two images after normalization
+
+# print and compare the two mosaics
+pdf("VGutierrez_Lab5.pdf")
+par(mfrow=c(1,1))
+plotRGB(unnorm, r=5, g=4, b=3, stretch="lin")
+plotRGB(norm, r=5, g=4, b=3, stretch="lin")
+dev.off()
+```
+
+## Lab deliverables
+1. Download from Earth explorer (http://earthexplorer.usgs.gov), two contiguous Landsat images from collection 2, level 2. One image corresponds to path 06 and row 066 acquired on August 18, 2015. The other one corresponds to path 07, row 066 acquired on August 22, 2014. The names of the images are: LC08_L2SP_006066_20150818_20200908_02_T1 and  LC08_L2SP_007066_20140822_20200911_02_T1
+
+2. Produce two mosaics. One with the two original images and the other with the normalization of the image from 2014 as a function of the image in 2015.
+
+3. Produce a single pdf file with the RGB plots corresponding to the unormalized and the normalized images images as shown in step 9 of the lab. Upload the pdf to module 5 in canvas (4 pts).
+
+__

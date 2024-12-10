@@ -1,0 +1,158 @@
+---
+title: 'Remote Sensing Lab 2: Satellite data exploration and visualization
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+## Lab due
+January 30 2019
+
+## Goal
+1.	To learn how to search and download satellite data from different satellites using the Earth Explorer archive.
+2. To learn how to import, visualize and explore satellite data using basic raster functions in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class2/LabMaterialsNTest"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+fig4path=paste(wd, "Fig4.png", sep="/")
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+fig4 = readPNG(fig4path)
+```
+
+## Part A. Downloading images
+1.	Go to Earth explorer (http://earthexplorer.usgs.gov). Click on the login link and enter the credentials that you used in class to open an account. If you haven’t opened an account click on the register link and follow the instructions. Please remember the credentials you used because you will need them frequently to login througout the course of the semester.
+2.	Earth explorer has two main panels. The panel on the left is the search panel and the one on the right is a map to visualize the regions of interest and the footprint of the images available. The search panel has four main tabs on the top: Search Criteria, Data Sets, Additional Criteria, and Results. 
+3.	Click on the “Search Criteria” tab. This tab gives the option to select the data to download by location and date ranges. You can search either by 1) typing an address/place, the path and row of a satellite image of interest (we will cover this in class) or a feature, or 2) coordinates. In our case we will enter an address but you should spend time exploring the other options.
+4.	Type “Phyladelphia” and click on the suggested location. This will show a pin in the selected location in the map.
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+5.	Click on the “Data Sets” tab at the top of the search panel. Then on the drop down menu select Landsat/Landsat Collection 1 Level-1/Landsat 8 OLI/TIRS C1 Level-1
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig2path)
+```
+
+6. Click on the results tab and locate the Landsat image specified below. You can constrain the search for a given date range by going to the “Search Criteria” tab, scrolling down to the bottom and entering any dates of interest. Select the Landsat 8 image acquired on July 30 2017 as specified below:
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig3path)
+```
+
+7.	Browse the buttons that appear at the bottom of the entity.
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig4path)
+```
+
+Read their names and click on each one of them so that you become familiar with their functionality. Click on the “Download Options”button. The image should download as a compressed file with a .tar.gz extension in the default downloads folder in your computer. Move the compressed file into the working folder that you specified as setwd() in R above.
+
+## Part B. Data import, visualization and exploration
+Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+1. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class2/LabMaterialsNTest"
+setwd(wd)
+```
+
+2. Check the names of the files in your working directory
+```{r include = TRUE}
+dir(wd)
+```
+
+3. Copy the name of the compressed file and paste it in untar to decompress the file. Then read the metadata to open and stack all the bands in R.
+```{r include = TRUE, message=F, warning=F}
+#opts_knit$set(root.dir = wd)
+untar(paste(wd,"LC08_L1TP_014032_20170612_20170628_01_T1.tar.gz",sep="/"))
+meta=readMeta(paste(wd, "LC08_L1TP_014032_20170612_20170628_01_T1_MTL.txt", sep="/"))
+L8=stackMeta(paste(wd, "LC08_L1TP_014032_20170612_20170628_01_T1_MTL.txt", sep="/"))
+L8 # Provides the spatial information associated with the downloaded image.
+```
+
+4. Explore the downloaded image to retrieve spatial information
+```{r include = TRUE, message=F, warning=F}
+crs(L8) # shows the spatial projection of the landsat image
+extent(L8) # shows the coordinates of the geographic corners of the image
+nlayers(L8) # shows the number of layers
+crs(L8) # shows the reference system
+xres(L8) # shows the spatial resolution in the x axis
+yres(L8) # shows the spatial resolution in the y axis
+res(L8) # shows the spatial resolution in the x,y axis
+ncell(L8) # shows the number of pixels in the image
+dim(L8) # rows, columns, bands
+```
+
+5. Explore the help menu of the plotRGB function paying attention to the different arguments. Then plot an RGB map for the entire image with a linear stretching. 
+
+Use the drawExtent() function to select two diagonal corners in the RGB image containing the city of Philaldephia. Use the crop function to resize the image to the area of interest and plot it as an RGB composite with no stretching
+```{r include = TRUE, message=F, warning=F}
+?plotRGB # displays the help menu for the plotRGB function in the lower right panel of RStudio.
+plotRGB(L8, r = 5, g = 4, b = 3, axes = FALSE, stretch = "lin",
+        main = "Landsat true Color Composite" )
+#plot.new()
+#e=drawExtent()
+#L8rsz=crop(L8,e)
+L8rsz=crop(L8,extent(471094, 509846, 4408605, 4445204))
+plotRGB(L8rsz, r = 5, g = 4, b = 3, axes = FALSE, stretch = NULL,
+        main = "Landsat true Color Composite" )
+```
+
+6. Plot histograms for some bands
+```{r include=TRUE, message=F, warning=F}
+hist(L8rsz[[3]],cex=3)
+hist(L8rsz[[4]],cex=3)
+hist(L8rsz[[5]],cex=3)
+hist(L8rsz[[6]],cex=3)
+```
+
+7. Save the resized image and histograms as a pdf with your Last, first initial and lab number
+```{r include = TRUE, message=F, warning=F}
+pdf("VGutierrez_Lab2.pdf")
+  plotRGB(L8rsz, r = 5, g = 4, b = 3, axes = TRUE, stretch = NULL,
+        main = "Landsat true Color Composite" )
+dev.off()
+```
+
+## Lab deliverables
+1.Click on the “Show Metadata and Browse” button (see step A7) and answer the following questions. (0.6 pts).
+What is the path and the row of the landsat image? _______, ________ 
+What is the total cloud cover in the scene? ___________ 
+What is the image quality? ________ 
+
+2. Modify the arguments in the plotRGB() function in step B5 to produce a cropped RGB composite for the area of New York instead of Philadelphia with a band combination equal to 6, 5 and 4. Make sure that your polygon does not include any black background pixels in the edges of the image. Produce two additional RGB plots representing a linear and histogram stretching. Do not modify anything else including parenthesis or quotation marks, otherwise the code will not run. 
+3. Produce a single pdf file with the three plotRGB maps representing the three stretchings as described above and upload it in canvas with your first initial, last name and lab number (see notation in step B7). In order to plot the three images in the same pdf file, write the three plotRGB functions together between the pdf() funtion and the dev.off() function (3 pts). 
+
+4. Modify step B4 above to answer the questions below (0.4 pts)
+What is the number of columns______ rows______ and bands _______ for your resized image for NYC.
+What is the extent? xmin ______, xmax ______, ymin ______, ymax ______
+What is the extent? xmin ______, xmax ______, ymin ______, ymax ______
+
+
+

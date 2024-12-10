@@ -1,0 +1,247 @@
+---
+title: 'Remote Sensing Lab 2: Satellite data exploration and visualization
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+## Lab due
+September 11 2024
+
+## Goal
+1.	To learn how to search and download satellite data from different satellites using the Earth Explorer archive.
+2. To learn how to import, visualize and explore satellite data using basic raster functions in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class2/LabMaterials"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+fig4path=paste(wd, "Fig4.png", sep="/")
+fig5path=paste(wd, "Fig5.png", sep="/")
+fig6path=paste(wd, "Fig6.png", sep="/")
+fig7path=paste(wd, "Fig7.png", sep="/")
+fig8path=paste(wd, "Fig8.png", sep="/")
+fig9path=paste(wd, "Fig9.png", sep="/")
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+fig4 = readPNG(fig4path)
+fig5 = readPNG(fig5path)
+fig6 = readPNG(fig6path)
+fig7 = readPNG(fig7path)
+fig8 = readPNG(fig8path)
+fig9 = readPNG(fig9path)
+```
+
+## Part A. Downloading images
+1.	Go to Earth explorer (http://earthexplorer.usgs.gov). Click on the login link and enter the credentials that you used in class to open an account. If you haven’t opened an account click on the register link and follow the instructions. Please remember the credentials you used because you will need them frequently to login througout the course of the semester.
+2.	Earth explorer has two main panels. The panel on the left is the search panel and the panel on the right is a map to visualize the regions of interest and the footprint of the images available. The search panel has four main tabs on the top: Search Criteria, Data Sets, Additional Criteria, and Results. 
+3.	Click on the “Search Criteria” tab. This tab gives the option to select the data to download by location and date ranges. You can search either by 1) typing an address/place, the path and row of a satellite image of interest (we will cover this in class) or a feature, or 2) coordinates. In our case we will enter an address but you should spend time exploring the other options.
+4.	Type “Phyladelphia” as the "feature name" and "Pennsylvania" as the State. Then click on "Show". Click on the suggested address/place This will add a pin to the map view in the selected location and will display the coordinates of the location in the left hand side.
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+You can see that the coordinates are displayed in the left panel and a pin with the location is displayed in the map panel
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Scroll down on the left panel and enter 06/01/2022 and 09/01/2023 as the date range (see Fig. 2 above). Then click on the cloud cover tab and use the knob to select a range lower than 10%. Then click on "Data Sets":
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+
+5  Click on the results tab and locate the Landsat image specified below. As you can see in the grayed image below, it corresponds to a scene acquired on July 17 2024.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig4path)
+```
+
+Go back to main Earth Explorer tab and close the attribute window; Then go to the left panel and click on the icone at the left of the image acquired on April 02 of 2023. This will display the attributes associated with the image. Scroll down through the attributes and become familiar with the information.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig5path)
+```
+
+6.	Browse the buttons that appear at the bottom of the entity.
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig6path)
+```
+
+Read their names and click on each one of them so that you become familiar with their functionality.
+
+Click on the “Download Options” button. In the new window, click on the button "Product Options" on the lower left corner in the pop up window.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig7path)
+```
+
+Click on the "Add All to Bulk" button for the Level-2 Surface Reflectance Bands
+(13 files) and then close. 
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig8path)
+```
+
+Click on the "Download All Files Now button on the "Download Options" window. It should download as either a compressed file with a .tar extension or as individual files, depending on the configuration of your computer
+
+
+If the download doesn't start, check the settings of your browser to make sure it does not block pop-up windows by entering this address to our Chrome browser: chrome://settings/content/popups . Make sure that https://earthexplorer.usgs.gov/ is added under "Allowed to send pop-ups and use redirects"
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig9path)
+```
+
+After the download is completed, move the compressed file into the working folder that you specified as setwd() in R above. 
+
+##### Please save this image. You will need it for the next lab!
+
+## Part B. Data importing, visualization and exploration
+Load required libraries.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(terra)
+```
+1. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class2/LabMaterials"
+setwd(wd)
+```
+
+2. Check the names of the files in your working directory.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+```
+
+3. Copy the name of the compressed file and paste it in untar to decompress the file. Then read the metadata to open and stack all the bands in R.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#opts_knit$set(root.dir = wd)
+untar("LC08_L2SP_014032_20240717_20240723_02_T1.tar")
+tifs <- list.files('.', pattern='.TIF')
+tifs # lists all the files in the working folder with the extension .TIF
+tifBandNames=tifs[c(3:9)] # enter the index position for the bands of interest (bands 1 through 7)
+L8=rast(tifBandNames)
+names(L8)=tifBandNames
+names(L8)
+L8
+```
+
+4. Explore the downloaded image to retrieve spatial information
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+crs(L8) # shows the reference system and spatial projection of the landsat image
+ext(L8) # shows the coordinates of the geographic corners of the image
+nlyr(L8) # shows the number of layers
+nrow(L8) # shows the number of rows
+ncol(L8) # shows the number of columns
+ncell(L8) # shows the number of pixels in the image
+dim(L8) # shows number of rows, columns and layers
+xres(L8) # shows the spatial resolution in the x axis
+yres(L8) # shows the spatial resolution in the y axis
+res(L8) # shows the spatial resolution in the x,y axis
+```
+
+5. Explore the help menu of the plotRGB function paying attention to the different arguments. Then plot an RGB map for the entire image with a linear stretching. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8, r=4, g=3, b=2, stretch="lin")
+```
+
+Use the draw() function to select two diagonal corners in the RGB image containing the city of Philaldephia. Use the crop function to resize the image to the area of interest and plot it as an RGB composite with no stretching
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+e=draw()
+L8rsz=crop(L8,e)
+plotRGB(L8rsz, r=4, g=3, b=2, stretch="lin") # true color composite
+```
+
+6.
+Let's visualize band composites with other band combinations 
+
+LET'S ADD HERE INSTRUCTIONS TO DO VISUALIZATION IN QGIS INSTEAD!!!!
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin") # Infrared composite
+plotRGB(L8rsz, r=6, g=5, b=4, stretch="lin") # SWIR composite
+```
+
+Let's change the equalization from linear to histogram using the "stretch" argument  
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8rsz, r=5, g=4 b=3, stretch="hist") # Infrared composite
+plotRGB(L8rsz, r=6, g=5, b=4, stretch="hist") # SWIR composite
+```
+
+How does this visualization compare with the previous one?
+
+7. Plot histograms for some bands
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hist(L8rsz[[3]],cex=3)
+hist(L8rsz[[4]],cex=3)
+hist(L8rsz[[5]],cex=3)
+hist(L8rsz[[6]],cex=3)
+```
+
+8. Save the resized image under the three composites as a pdf with your Last name, first initial and lab number
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("VGutierrez_Lab2.pdf")
+  plotRGB(L8rsz, r=4, g=3, b=2, stretch="lin") # True color composite
+  plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin") # Infrared composite
+  plotRGB(L8rsz, r=6, g=5, b=4, stretch="lin") # SWIR composite
+dev.off()
+```
+
+## Lab deliverables
+
+1.Go to Earth Explorer and select a new location: Type the name of your home town, use the same date range as before (06/01/2023 and 09/01/2024) and cloud cover less than 10%. Select the image that looks best to you (that means not too many clouds, clear view) (0.5 pts)
+
+What is the name of your home town? ______________________________________
+
+Paste the name of the image (e.g. LC08_L1TP_016028_20190718_20190731_01_T1): ______________________
+
+2. Click on the “Show Metadata and Browse” button (see step A8) and answer the following questions. (0.5 pts).
+
+What are the path and the row of the landsat image? _______, ________ 
+
+What is the total cloud cover in the scene (in percentage)? ___________ 
+
+What is the image quality? ________ You can open the Landsat file that ends with "_MTL.txt" and do a search for the element called "IMAGE_QUALITY_OLI"
+
+3. Adapt the code written in step B.5. to crop the image to the extent of the biggest urban area that you can find in the image  
+
+4. Use the code in Part B, steps 1-4 and to answer the questions below (0.5 pts)
+
+What is the number of columns______ rows______ and bands _______ for your resized image.
+
+What is the extent? xmin ______, xmax ______, ymin ______, ymax ______.
+
+5. Use the plotRGB() function in step B.6 to produce a plot with bands 5, 4, and 3 and the argument stretch="lin"  Make sure that your polygon does not include any black background pixels in the edges of the image. Do not modify anything else including parenthesis or quotation marks, otherwise the code will not run. 
+
+Then compare the result with an image produced with stretch="hist". How do the visualization characteristics change in the image?
+
+5. Produce a single pdf with three different band combinations as shown in step B8, using "lin" and "hist"stretching  and upload the pdf to canvas with your first initial, last name and lab number (see notation in step B.8.). The pdf should contain six images corresponding to three band combinations and two stretchings.
+
+Discuss briefly the differences in the visualization properties between the three band combinations and two stretching options. Which of the graphs enables a better visualization of the different features in the image (e.g. urban areas, rivers, forests, grasslands)?
+
+6. Copy these instructions , paste them in a word document and respond to the questions. Submit the word document along with the PDF containing the maps to Canvas (Upload lab 2 here).

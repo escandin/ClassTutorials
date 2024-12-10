@@ -1,0 +1,215 @@
+---
+title: 'Advanced Remote Sensing Lab 10: Advanced classification algorithms'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session10_AdvancedAlgorithms"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1_.png", sep="/")
+fig2path=paste(wd, "Fig2_.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab due
+April 06 2021
+
+### Goals
+1. To become familiar with the characteristics and use of optical data from the Sentinel 2 mission.
+
+2. To become familiar with the parameterization of advanced algorithms for image classification and their performance.
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+### Lab instructions
+
+#### 1.	Upload and pre-process sentinel data.
+Click on the following link to become familiar with the Sentinel 2 image collection: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2
+
+Copy and paste the function below in your script. You will use the function to mask clouds and cloud shadows based on the QA layer available in the sentinel data collection. This is analogue to the function that we used to mask clouds and cloud shadows in Lab 5.
+```{JavaScript}
+// function to mask clouds
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+```
+
+Navigate in the map view to the area near to Amsterdam. Based on what you learned in labs 5 and 6, draw a polygon defining your study area and name it "StudyArea". Then load the Sentinel 2 image collection (surface reflectance) and use the polygon to apply spatial filter. Select a time range to also apply temporal filter.
+
+```{JavaScript}
+var S2 =ee.ImageCollection("COPERNICUS/S2_SR")
+        .filterBounds(StudyArea)
+        .filter(ee.Filter.calendarRange(2019,2020,'year'))
+        .filter(ee.Filter.calendarRange(153,244, 'day_of_year'))
+        //.filterDate('2017-03-20', '2017-04-09')
+        //.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+        .map(maskS2clouds);
+        
+```
+
+Select a subset of bands that you will use for classification. Then produce a composite representing the median value for each pixel in the time series and add it to the map view.
+```{JavaScript}
+var bands =['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12'];
+
+var S2_sel= S2.select(bands);
+print(S2_sel, "S2_sel");
+
+var count17 = S2_sel.size();
+print('Count of S2_SA_2020: ', count17);
+
+var S2_sel_med= S2_sel.median();
+print (S2_sel_med, "S2_sel_med")
+
+// define visualization parameters
+var rgbVis = {
+  min: 0.0,
+  max: 0.5,
+  bands: ['B4', 'B3', 'B2'],
+  gamma: 1.6,
+};
+
+Map.centerObject(StudyArea, 11);
+Map.addLayer(S2_sel_med, rgbVis, 'RGB');
+```
+
+#### 2.	Training data collection.
+Explore the image and define the names of the classes that you are aiming. Then collect polygons representing diferent deforestation periods and no change. For that purpose zoom into an area of interest. Then click on the "add amarker" button in the map window (see red circle in image below) and click in areas of interest representing a given class of interest. Produce enough markers for each class to represent the spectral variability of such class in the landscape. 
+
+Select click on the “+ new layer” button (blue circle in image below) and collect points for a second class of interest. Repeat the process for all classes.
+
+Click on the wheel on front of each layer (yellow circle in image below). 
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+In “import as” select “geometry” and in “property” write “Class” . Assign to each feature a consecutive number starting from zero (see image below).
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Add all the feature classes into a feature collection. Use the feature collection to extract the reflectance data that corresponds to each marked location.
+
+```{JavaScript}
+// Collect points for classification
+var calib = ee.FeatureCollection([Bare, Cropland, Forest, Grassland, Urban, Water]);
+print(calib,"calib")
+
+// Overlay the points on the imagery to get training.
+var training = S2_sel_med.select(bands).sampleRegions({
+  collection: calib,
+  properties: ['Class'],
+  scale: 30
+});
+
+print(training, "training")
+```
+
+#### 3.	Produce classified maps with different classification algorithms
+We will produce maps with four different algorithms: classification and regression trees (cart), random forest (rf), gradient tree boost (gtb), naive bayes (naive) and support vector machine (svm).
+```{JavaScript}
+var cart = ee.Classifier.smileCart().train(training, "Class", bands);
+print(cart, "cart")
+
+var rf = ee.Classifier.smileRandomForest(10)
+    .train({
+      features: training,
+      classProperty: 'Class',
+      inputProperties: bands
+    });
+print(rf, "rf")
+
+var gtb = ee.Classifier.smileGradientTreeBoost(10)
+    .train({
+      features: training,
+      classProperty: 'Class',
+      inputProperties: bands
+    });
+print(gtb, "gtb")
+
+var naive = ee.Classifier.smileNaiveBayes()
+    .train({
+      features: training,
+      classProperty: 'Class',
+      inputProperties: bands
+    });
+print(naive, "naive")
+
+var svm = ee.Classifier.libsvm({
+  kernelType: 'RBF', 
+  gamma: 0.5, 
+  cost: 10})
+    .train({
+      features: training,
+      classProperty: 'Class',
+      inputProperties: bands,
+      
+    });
+print(svm, "svm")
+```
+
+Use the trained algorithms to classify the image
+```{JavaScript}
+var cart_class = S2_sel_med.select(bands).classify(cart);
+print(cart_class, "cart_class")
+
+var rf_class = S2_sel_med.classify(rf)
+print(rf_class, "rf_class")
+
+var gtb_class = S2_sel_med.select(bands).classify(gtb);
+print(gtb_class, "gtb")
+
+var naive_class = S2_sel_med.select(bands).classify(naive);
+print(naive_class, "naive")
+
+var svm_class = S2_sel_med.select(bands).classify(svm);
+print(svm_class, "svm_class")
+
+```
+
+Add the classified maps to the map view and compare their performance visually
+```{JavaScript}
+var Palette = ['92584d',  'fff882', '099a46', '8ec283', 'ff9a9a', '2fbff0'];
+
+Map.addLayer(cart_class, {palette: Palette, min: 0, max: 4}, 'cart_class')
+Map.addLayer(rf_class, {palette: Palette, min: 0, max: 4}, 'rf_class')
+Map.addLayer(gtb_class, {palette: Palette, min: 0, max: 4}, 'gtb_class')
+Map.addLayer(naive_class, {palette: Palette, min: 0, max: 4}, 'naive_class')
+Map.addLayer(svm_class, {palette: Palette, min: 0, max: 4}, 'svm_class')
+
+```
+
+### Homework
+Follow the lab instructions to produce land cover classifications for the area where you are planning to work for your final project. Fill up this form for your report: https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUN0tZWE04MEgzVDI0UVM5UzQ0R0lNVldOSy4u
+
+#### Sources
+https://developers.google.com/earth-engine/guides/classification

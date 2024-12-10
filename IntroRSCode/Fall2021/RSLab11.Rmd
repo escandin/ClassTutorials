@@ -1,0 +1,464 @@
+---
+title: 'Remote Sensing Lab 11: Unsupervised and Supervised classification/ accuracy assessment/change analysis'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class10/LabMaterials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+November 11, 2021
+
+## Goals
+1. To learn graphical approaches to assess class separability for land cover classification.
+2. To learn methods for unsupervised and supervised image classification and their implementation in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+Note: this is an update of the previous lab that includes a section on accuracy and change assessment.
+
+This lab assumes that some of the procedures learned in previous labs for downloading and pre-processing satellite images in R as well as deriving band transformations and spectral indices are already mastered and therefore are not covered here. Please refer to previous labs to implement such previous steps.
+
+1. Open R Studio and then a new R script. Copy and paste each chunk of the code below in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+2.	Answer the questions in the answer sheet and submit your along with the required files to canvas.
+
+Have fun!
+
+1. Load required libraries. Use the function install.packages("") to install any unavailable libraries
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+library(rgl)
+library(prettymapr)
+library(stringr)
+```
+
+2. Load the functions below. I created them for visualizing the separability between classes. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+stack2df <- structure(function #Extracts into data frame 
+### This function extracts into a data frame the pixel values for
+### all bands from different classes defined in a spatial dataframe
+                       ##details<< This function ...
+(
+    inrast, ##<<\code{}. 
+    invec, ##<<\code{}. 
+    classcolname="class" ##<<\code{}.
+){
+  # extracts into a data frame the pixel values for all bands from different classes
+  # defined in a spatial dataframe
+  # inrast: the raster dataset containing pixel values to extract in [[1]]
+  # invec: spatial dataframe object defining the locations where the data
+  # should be extracted from 
+  # classcolname: the column in the spatial dataframe containing the names 
+  # of the attributes associated to those areas
+  # value: a data frame with columns representing the pixel values in each band for
+  # the areas labeled as defined by classcolname
+  if (is.null(raster::intersect(extent(invec), extent(inrast)))){
+    stop("the extents of inrast and invec do not overlap")
+  }
+  if(as.character(crs(inrast))!= as.character(crs(invec))){
+    stop("inrast and invec should have the same projection")
+  }
+  # required function
+  extractval=function(inraster=inrast, msk=msk){
+    outvector=raster::mask(inraster, msk) 
+    outvector=na.omit(raster::getValues(outvector))
+    return(outvector)
+  }
+  
+  # assign class ID to each class
+  invec$class_ID=rep(NA, nrow(invec@data))
+  for (i in 1:length(invec[[classcolname]])){
+    invec$class_ID[which(invec[[classcolname]]==unique(invec[[classcolname]])[i])]=i
+  }
+  
+  # mask the input raster including  pixels with valid values in all bands only
+  inrast=stackmask(inrast)
+  
+  # create a raster of class_ids. TRY gdalUtils::gdal_rasterize. It might be faster!!!
+  calibrast=raster::rasterize(invec, inrast[[2]], field=invec$class_ID)
+  calibmsk<-maskfun(calibrast, 0, 1, NA)
+  calibmsk=raster::mask(calibmsk, inrast[[2]])
+  
+  # Extract pixel values into a dataframe
+  class_ID=(extractval(calibrast, calibmsk))
+  dataset=data.frame(matrix(data=NA, nrow=length(class_ID), ncol=nlayers(inrast[[1]])))
+  
+  # add a column with a class name
+  dbclassname=rep(NA, length(class_ID))
+  for (i in 1:length(unique(invec[[classcolname]]))){
+    dbclassname[which(class_ID==i, arr.ind=TRUE)] = unique(invec[[classcolname]])[i]
+  }
+  commonclasses= match(sort(unique(dbclassname)), sort(levels(invec[[classcolname]])))
+  if(length(commonclasses)< length(levels(invec[[classcolname]]))){
+    missing=sort(levels(invec[[classcolname]]))[-commonclasses]
+    warning(paste(paste("the class", missing, sep= " "), 
+                  "has no valid pixels in input raster", sep=" "))
+    print(paste(paste("Warning: the class", missing, sep= " "), 
+                "has no valid pixel values in the input raster", sep=" "))
+  }
+  
+  dataset=cbind(class_ID, dbclassname, dataset)
+  rm(class_ID, dbclassname)
+
+  for (i in 1:nlayers(inrast[[1]])){
+    dataset[,i+2]=extractval(inrast[[1]][[i]], calibmsk)
+    print(paste(i, "layers extracted", sep=" "))
+  }
+  names(dataset)=c("class_ID", "class_name", names(inrast[[1]]))
+  return(dataset)
+### \code{}... 
+} , ex=function(){
+    tarFiles <- c('LT050070651987081201T1-SC20181031175314.tar.gz',
+                  'LT050060661988072201T1-SC20181031160603.tar.gz')
+    tarPaths <- system.file(tarFiles, package = 'aRn')
+    stack <- EEstackWithoutMeta(tarPaths, c(1:4))
+    strips <- RasterIntersection(stack)
+ })
+
+stackmask <- structure(function #Stack mask
+### This function ...
+                       ##details<< This function ...
+(
+    inrast, ##<<\code{RasterBrick}. Reference raster.
+    maskrast=TRUE ##<<\code{logical}. Apply the mask to the raster
+                  ##stackoutput: If maskrast=true a list with the
+                  ##stack masked and the mask produced. If
+                  ##maskrat=FALSE, the raster mask.
+){
+  # THIS FUNCTION HAS TO BE OPTIMIZED. IT TAKES TOO LONG
+  # masks out any pixels that have NAs in at least 1 band 
+  # in a raster stack
+  # maskrast: TRUE applies the mask to the raster stack
+  # output: If maskrast=true a list with the stack masked and
+  # the mask produced. If maskrat=FALSE, the raster masck)
+  msk<-max(inrast)
+  msk<-maskfun(msk, 0,1,NA)
+  #inrast<-raster::mask(inrast, msk)
+  if (maskrast==TRUE){
+    inrast<-raster::mask(inrast, msk) # this is more than a minute faster than using the raster::mask function
+    out=list(inrast,msk)} else {
+      out=msk}
+  return(out)
+### \code{}... 
+} , ex=function(){
+    tarFiles <- c('LT050070651987081201T1-SC20181031175314.tar.gz',
+                  'LT050060661988072201T1-SC20181031160603.tar.gz')
+    tarPaths <- system.file(tarFiles, package = 'aRn')
+    stack <- EEstackWithoutMeta(tarPaths, c(1:4))
+    strips <- RasterIntersection(stack)
+    ## thrs <- thresraster(strips[[2L]], strips[[1L]])
+    ## noch <- nochg(thrs, degfree = nlayers(strips[[2L]]) - 1, pvalue = 4E-1)
+    ## calp <- calibrationParameters(strips[[2L]], strips[[1L]], noch, nbrackets = 8)
+    model <- PIFmodel(strips, pvalue = 4E-1, brackets = 8)
+    calib <- CalibrateRaster(model, stack)
+    ## merged <- merge(calib, stack[[2L]][[names(calib)]])
+    ## plotRGB(merged, r = 3, g = 2, b = 1, stretch = 'lin')
+})
+
+maskfun <- structure(function #Stack mask
+### This function sets a threshold value (thresh). Any pixels above
+### thresh are converted to aboveval. Any pixels bellow or equal to
+### thresh are converted to belowval
+                       ##details<< This function ...
+(
+    x, ##<<\code{}...
+    thresh, ##<<\code{}...
+    aboveval, ##<<\code{}...
+    belowval ##<<\code{}...
+){
+  # sets a threshold value (thresh). Any pixels above 
+  # thresh are converted to aboveval
+  # Any pixels bellow or equal to thresh are converted to belowval
+  require(raster)
+  v <- raster::getValues(x)
+  v[v>thresh]=aboveval
+  v[v<=thresh]=belowval
+  x <- raster::setValues(x, v)
+  return(x)
+### \code{}... 
+} , ex=function(){
+    tarFiles <- c('LT050070651987081201T1-SC20181031175314.tar.gz',
+                  'LT050060661988072201T1-SC20181031160603.tar.gz')
+    tarPaths <- system.file(tarFiles, package = 'aRn')
+    stack <- EEstackWithoutMeta(tarPaths, c(1:4))
+    strips <- RasterIntersection(stack)
+    ## thrs <- thresraster(strips[[2L]], strips[[1L]])
+    ## noch <- nochg(thrs, degfree = nlayers(strips[[2L]]) - 1, pvalue = 4E-1)
+    ## calp <- calibrationParameters(strips[[2L]], strips[[1L]], noch, nbrackets = 8)
+    model <- PIFmodel(strips, pvalue = 4E-1, brackets = 8)
+    calib <- CalibrateRaster(model, stack)
+    ## merged <- merge(calib, stack[[2L]][[names(calib)]])
+    ## plotRGB(merged, r = 3, g = 2, b = 1, stretch = 'lin')
+})
+
+plotSpectra=function(dataset=outdata, bandnames=c("B3_dn", "B4_dn", "B5_dn"),
+                     classfield=1, classlabels= sort(unique(dataset[,classfield])),
+                     classcol=sample(colors(), size=length(classlabels))){
+  #Assign colors to different labels
+  dataset=dataset[order(dataset[classfield]),]
+  cols=rep(NA, length(classlabels))
+  for (i in 1:length(classlabels)){
+    cols[which(dataset[,classfield]==classlabels[i])]=classcol[i]
+  }
+  
+  return(plot3d(dataset[,as.character(bandnames[1])],
+                dataset[, as.character(bandnames[2])], 
+                dataset[, as.character(bandnames[3])],
+                xlab=bandnames[1],
+                ylab=bandnames[2],
+                zlab=bandnames[3],
+                col=cols)) 
+  legend3d("topleft", legend = classlabels, 
+           pch = 16, col = classcol  , cex=1, inset=c(0.02))
+}
+```
+
+3. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class10/LabMaterials"
+dir.create(wd) # this is in case you want to create th directory directly from R
+setwd(wd)
+```
+
+4. Open the images that you produced in the previous lab. These will be used as input variables for the classification.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+L8=stack("L8rsz.tif")
+L8indices=stack("L8indices.tif")
+tassCap=stack("L8tascap.tif")
+tcnames=c("brightness", "greenness", "wetness" )
+names(tassCap)=tcnames
+```
+
+5. Perform an unsupervised classification. As the number of classes, select the same number as the number classes considered in the collection of training polygons
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unsupervised=unsuperClass(tassCap, nClasses=13)
+plot(unsupervised$map, col=sample(colors(), 13))
+```
+
+6. Upload the shapefile representing the training polygons that you collected for different land cover classes in the previous lab. Then overlay them with the map. If the datasets do not overlay, it is likely due to a different projection between the raster and the vector files. In that case, the vector file should be reprojected as shown below:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# This plots the last bands corresponding to the tasseled cap transformation but can be modified to any bands of interest
+calibdata=readOGR(".", "Training_Pucallpa_2015_Sel")
+# ADD SOME FUNCTIONS TO EXPLORE THE ATTRIBUTE TABLE OF calibdata
+
+plotRGB(tassCap, r=1, g=2, b=3, stretch="lin") 
+plot(calibdata, add=T)
+
+# Check if the projections are the same
+crs(calibdata)
+crs(tassCap)
+
+# If they are not the same, reproject the vector file
+calibdataPrj=spTransform(calibdata, crs(tassCap))
+```
+
+7. Check the separability between different polygons visually. Write the name of the bands that you want to plot in the plotSpectra() function. Add as many "classcolors" as the number of classes you have in your training data. You can find the name for different colors in R here: http://www.stat.columbia.edu/~tzheng/files/Rcolor.pdf 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+calibdataPrj 
+# Check the name of the column with the class names and enter it in the classcolname argument below
+outdata=stack2df(inrast=tassCap, invec=calibdataPrj,
+                 classcolname="CLASS_NAME")
+length(unique(outdata$class_name)) # number of unique land cover classes in your training polygons
+
+# Create an object with the colors to assign to each land cover. The number of colors is equal to the number of unique classes identified for the study area (see previous line)
+
+# The colors are assigned to classes in alphabetical order so let's retrieve the names of the classes
+sort(unique(outdata$class_name))
+classcolors= c("gray", "green", "yellow", "blue", "purple", "red")
+# plotSpectra should create a new window showing with a 3D depiction of the pixel values in three bands defined by the argument "bandnames" for all land cover classes
+names(outdata) # Check the names of the bands you want to graph in plotSpectra
+
+plotSpectra(dataset=outdata, bandnames=tcnames, classfield=2,
+             classlabels=sort(unique(outdata$class_name)),
+             classcol=classcolors)
+ 
+# Make sure that the name in the legend coincides with the name of the column representing class names. In the example below is Class.ID
+legend3d("topleft", legend= sort(unique(calibdataPrj$Class)),
+         col=classcolors, pch=3, cex=1, inset=c(0.02))
+```
+
+8. Perform supervised classification.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+supervised=superClass(tassCap, calibdataPrj, trainPartition=.7,
+                      responseCol = "CLASS_NAME" )
+plot(supervised$map, col=classcolors)
+```
+
+9. Retrieve variable importance for the supervised classification
+```{r message=FALSE, warning=FALSE, include=TRUE, eval=FALSE}
+# retrieves variable importance from the supervised object
+supervised$model$finalModel$importance
+```
+
+10. Save all data as R files and as Geotiffs
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# To save data
+save(calibdataPrj, file="calibdata.RData") # save the polygons as an R object
+save(supervised, file="supervised.RData")
+save(unsupervised, file="unsupervised.RData")
+
+# To export spatial files in a format compatible with other applications
+writeOGR(calibdataPrj, dsn=getwd(), layer="calibdataPrj", # save polygons as shape file
+         driver="ESRI Shapefile")
+writeRaster(supervised$map, filename="supervised.tif", 
+            filetype="GTiff")
+writeRaster(unsupervised$map, filename="unsupervised.tif", 
+            filetype="GTiff")
+```
+
+11. Open both classification results in QGIS or any other GIS software. Use a high resolution base map to interpret the most likely land cover category for the unsupervised classification and enter the names below in the "catnamesUnsup" object. Plot maps and figures including a legend, scale bar and north arrow and save them as a single pdf document
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unsupercol=sample(colors(), 13) # These are the colors to be used for mapping the unsupervised map
+plot(unsupervised$map, col=unsupercol, axes=FALSE, legend=T, box=FALSE)
+
+# Interpret the names of the classes in the unsupervised map and assign them to each category number below:
+catnamesUnsup=sort(c("Adolescent Oil Palm", "Bare Ground", "Lake", "Mature Oil Palm", "New Burn Scar", "Old Burn Scar", "Old Growth Forest", "Pasture",  "River", "Sand Banks", "Secondary Forest", "Urban", "Young Oil Palm"))
+
+pdf("VGutierrezLab8.pdf", paper="USr", width=15)
+
+# PLOT THE UNSUPERVISED CLASSIFICATION
+# assign intuitive colors to the different classes. In this case, I will use the same colors as the supervised classification
+unsupercol=classcolors 
+plot(unsupervised$map, col=unsupercol, axes=FALSE, legend=F, box=FALSE)
+# Add north arrow, scalebar.
+
+# use catnames$category below if you are using a PC
+legend("topright", legend = catnamesUnsup,
+       fill = unsupercol, cex=0.7, bg="white")
+
+prettymapr::addnortharrow(pos="bottomright", scale = 0.6, padin=c(0.5,0.1),
+                          text.col = 'black', cols = c('black', 'black'))
+prettymapr::addscalebar(pos="bottomleft", plotunit = 'm', widthhint = 0.25, lwd = 1, 
+                        padin = c(0.5, 0.1), label.cex = 0.9)
+
+# PLOT THE SUPERVISED CLASSIFICATION
+# Retrieve the names of the different categories and 
+# the pixel values assigned to each one of them
+catnames=supervised$map@data@attributes[[1]]$value
+catnames
+# This defines the colors to assign to each catname
+# The colors are assigned to each class are in the same order as they 
+# appear in catnames. Make sure the colors are intuitive
+#mapcol=c("pink", "green", "lightblue", "yellow", "blue", "gray", "red")
+
+plot(supervised$map, col=classcolors, axes=FALSE, legend=FALSE, box=FALSE)
+
+# use catnames$category below if you are using a PC
+legend("topright", legend = catnames,
+       fill = classcol, cex=0.4, bg="white")
+
+# Add north arrow, scalebar.
+prettymapr::addnortharrow(pos="bottomright", scale = 0.6, padin=c(0.5,0.1),
+                          text.col = 'black', cols = c('black', 'black'))
+prettymapr::addscalebar(pos="bottomleft", plotunit = 'm', widthhint = 0.25, lwd = 1, padin = c(0.5, 0.1), label.cex = 0.6)
+dev.off()
+```
+
+12. Retrieve variable importance and accuracy assessment for the supervised classification
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# retrieves variable importance from the supervised object
+supervised$model$finalModel$importance
+
+# retrieves the accuracy matrix
+supervised$validation$performance$table
+
+#  Load function for plotting accuracy results
+AccuPlot <- structure(function #Plot users and producers accuracy 
+### This function plots users and producers accuracy based on the
+### results of a confusion matrix obtained through the application of
+### the function caret::confusionMatrix.
+                       ##details<< Location: location of the
+                       ##legend. Options:"bottomright", "bottom",
+                       ##"bottomleft","left", "topleft", "top",
+                       ##"topright", "right" "center"
+(
+    conmatrix, ##<<\code{}. 
+    location="top" ##<<\code{}. 
+){
+    ## require(stringr)
+  colsum=colSums(supervised$validation$performance$table)
+  rowsum=rowSums(supervised$validation$performance$table)
+  diagonal=diag(supervised$validation$performance$table)
+  producers=round(diagonal/colsum, digits=3)
+  users=round(diagonal/rowsum, digits=3)
+  overall=sum(diagonal)/sum(colsum)
+  classnames=names(users)
+  par(mar = c(7, 4, 2, 2) + 0.2)
+  barplot(rbind(users,producers),col=c("aquamarine3","coral"), 
+          names.arg=classnames,  beside = TRUE, ylab= "accuracy (%)", las=2, cex.names=0.7)
+  legend(location, legend=c("Users", "Producers"), box.lty=0, bg= "transparent",
+         col=c("aquamarine3","coral"), lty=1:2, cex=0.8)
+  # as.numeric(levels(aRnStats[[4]][,2]))
+  #
+  #plot(accuplot)
+  classaccuracy=data.frame(cbind(as.numeric(users), as.numeric(producers)), 
+                           stringsAsFactors=FALSE)
+  # I have to do this twice otherwise data.frame converts numbers into factors.
+  classaccuracy=cbind(classnames, classaccuracy, stringsAsFactors=FALSE)
+  names(classaccuracy)=c("class name", "users", "producers")
+  return(list(overall, classaccuracy))
+### \code{}... 
+} , ex=function(){
+    tarFiles <- c('LT050070651987081201T1-SC20181031175314.tar.gz',
+                  'LT050060661988072201T1-SC20181031160603.tar.gz')
+    tarPaths <- system.file(tarFiles, package = 'aRn')
+    stack <- EEstackWithoutMeta(tarPaths, c(1:4))
+    strips <- RasterIntersection(stack)
+    ## thrs <- thresraster(strips[[2L]], strips[[1L]])
+    ## noch <- nochg(thrs, degfree = nlayers(strips[[2L]]) - 1, pvalue = 4E-1)
+    ## calp <- calibrationParameters(strips[[2L]], strips[[1L]], noch, nbrackets = 8)
+    ## model <- PIFmodel(strips, pvalue = 4E-1, brackets = 8)
+    ## calib <- CalibrateRaster(model, stack)
+    ## merged <- merge(calib, stack[[2L]][[names(calib)]])
+    ## plotRGB(merged, r = 3, g = 2, b = 1, stretch = 'lin')
+})
+
+# Use the uploaded function to plot accuracy results
+AccuPlot(supervised$validation$performance)
+```
+
+13. Perform change assessment. This requires to produce a classification from an earlier image following the different pre-processing and classification steps learned throughout the course. We will call the earlier image "supervised_first".
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+supervised_first=raster("classTAR_imist_iter_3.tif")
+supervised_first=crop(supervised_first, extent(supervised_last))
+chgMat=crosstab(supervised_first, supervised$map)
+```
+
+## Lab 11 deliverables
+1. Upload to canvas your accuracy plot as a pdf format (0.5 pts)
+
+2. Analyze the accuracy matrix and the accuracy plot and briefly answer the questions below. Upload your answers to canvas (2.5 pts). 
+a)	Which class had the highest  producer’s  accuracy? Which one had the lowest?
+b)	What classes had the highest user’s  accuracy? Which one had the lowest?
+c)	For the class that had the lowest producer’s accuracy, what other land cover represents the largest confusion.
+d)	For the class that had the lowest user’s accuracy, what other land cover represents the largest confusion.
+e)	How do you think the classification can be improved?
+
+
+
+
+
+
+
+
+
+

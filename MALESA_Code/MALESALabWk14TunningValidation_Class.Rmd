@@ -1,0 +1,240 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 10: Model tunning and validation (supervised regression)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goals
+To learn how to tune and validate a supervised machine learning model.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use data from previous labs to assess the most appropriate values for model hyperparameters.
+
+The code described below was adapted from the following sources:
+https://rpubs.com/phamdinhkhanh/389752
+https://machinelearningmastery.com/tune-machine-learning-algorithms-in-r/
+https://www.projectpro.io/recipes/tune-hyper-parameters-grid-search-r 
+
+Have fun!
+
+### System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024")
+setwd(wd)
+#library(terra)
+#library(sf)
+#library(ggplot2)
+#library(corrplot)
+#library(DataExplorer)
+library(caret)
+#library(randomForest)
+#library(gbm)
+#library(e1071)
+#library(xgboost)
+#library(geodata)
+#library(prism)
+#prism_set_dl_dir(wd)
+dir.create('tempfiledir')
+tempdir="/Users/tug61163/Downloads/tempdir"
+terraOptions(tempdir="tempdir", progress=5)
+sourcedir="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week9"
+```
+
+#### Load calibration files and remove irrelevant variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+load(paste0(sourcedir,"/sampdata.RData"))
+refdata=sampdata
+names(refdata)
+refdata=refdata[,-c(1, 18:19)]
+rm(sampdata)
+```
+
+### Grid search using random forest
+
+#### Split the data in calibration and validation subsets
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+parts = createDataPartition(refdata$veg, p = .7, list = F)
+train = refdata[parts, ]
+test = refdata[-parts, ]
+```
+
+#### Setup the parameters for the k-fold cross-validation that will be passed to the train() function.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+train_control = trainControl(method = "repeatedcv", 
+                             number = 5, 
+                             repeats=3,
+                             search = "grid")
+```
+
+#### Tune the model for different values of mtry
+By using the set. seed() function, you guarantee that the same random values are produced each time you run the code:  https://www.statology.org/set-seed-in-r/#:~:text=The%20set.,time%20you%20run%20the%20code.s
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tunegrid <- expand.grid(.mtry = (1:5))
+
+# For regression model
+rf_tune_reg <- train(veg ~ ., 
+                       data = train,
+                       method = 'rf',
+                       metric = 'Accuracy',
+                       tuneGrid = tunegrid)
+print(rf_tune_reg)
+plot(rf_tune_reg)
+```
+
+Some algorithms come with their own set of tools for tunning parameters. RF has a tool to optimize mtry:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+y=refdata[,17]
+x=refdata[, 1:ncol(refdata)-1]
+bestMtry <- tuneRF(x,y, stepFactor = 1.5, improve = 1e-5, ntree = 500)
+```
+
+Notice that the optimum mtry is different than in the previous procedure. That might be because here the value is estimated using the OOB error estimate.
+
+##### Create your own model by iterating hyperparameter values of ntree
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tunegrid <- expand.grid(.mtry = c(sqrt(ncol(refdata))))
+modellist <- list()
+for (ntree in c(10,500, 1000)){
+  set.seed(123)
+  fit <- train(veg~.,
+               data = train,
+               method = 'rf',
+               metric = 'Accuracy',
+               tuneGrid = tunegrid,
+               trControl = train_control,
+               ntree = ntree)
+  key <- toString(ntree)
+  modellist[[key]] <- fit
+}
+
+#Compare results
+results <- resamples(modellist)
+summary(results)
+dotplot(results)
+```
+
+#### Creating a new method to enable the tunnning of different hyperparameters. 
+One option is to define a customized algorithm with a number of elements compatible with the caret package. Below is a customized algorithm to search for different combinations of mtry and ntree. This implementation can be tricky and requires experimentation to set it up. 
+
+Here is an example with random forest. First customize the list that defines the algorithm:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+metric="Accuracy" ### Accuracy for supervised classification
+customRF <- list(type = "Classification",
+                 library = "randomForest",
+                 loop = NULL)
+
+customRF$parameters <- data.frame(parameter = c("mtry", "ntree"),
+                                  class = rep("numeric", 2),
+                                  label = c("mtry", "ntree"))
+
+customRF$grid <- function(x, y, len = NULL, search = "grid") {}
+
+customRF$fit <- function(x, y, wts, param, lev, last, weights, classProbs) {
+  randomForest(x, y,
+               mtry = param$mtry,
+               ntree=param$ntree)
+}
+
+#Predict label
+customRF$predict <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+  predict(modelFit, newdata)
+
+#Predict prob
+customRF$prob <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+  predict(modelFit, newdata, type = "prob")
+
+customRF$sort <- function(x) x[order(x[,1]),]
+customRF$levels <- function(x) x$classes
+```
+
+Use the custom method to train an algorithm for different values of mtry and ntree
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tunegrid <- expand.grid(.mtry=c(1:15),.ntree=c(500,1000,1500))
+#tunegrid <- expand.grid(.mtry=c(1:5),.ntree=c(500,1000))
+
+set.seed(123)
+custom <- train(veg~., data=train, 
+                method=customRF, 
+                metric=metric, 
+                tuneGrid=tunegrid, 
+                trControl=train_control)
+print(custom)
+summary(custom)
+plot(custom)
+```
+
+#### Test the performance of the model to predict validation data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#use model to make predictions on test data
+pred_y = predict(custom, test)
+
+# Produce performance metrics
+test_y = test[, 17]
+confusionMatrix(pred_y, test$veg)
+```
+
+### Grid search for xgboost
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Customizing the tuning grid
+gbmGrid <-  expand.grid(max_depth = c(3, 5, 7), 
+                        nrounds = (1:10)*50,    # number of trees
+                        # default values below
+                        eta = 0.3,
+                        gamma = 0,
+                        subsample = 1,
+                        min_child_weight = 1,
+                        colsample_bytree = 0.6)
+
+# training a XGboost Regression tree model while tuning parameters
+model = train(veg~., 
+              data = train, 
+              method = "xgbTree", 
+              trControl = train_control, 
+              tuneGrid = gbmGrid)
+
+# summarizing the results
+print(model)
+plot(model)
+```
+
+##### Test the performance of the model to predict validation data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#use model to make predictions on test data
+pred_y1 = predict(model, test)
+# Produce performance metrics
+test_y = test[, 17]
+confusionMatrix(pred_y1, test$veg)
+```
+
+#### Lab report
+Adapt the code illustrated today to identify suitable values for hyperparameters associated with the application of two models for the data in your final project. The first one should ba a random forest and the other an extreme gradient boosting.
+
+Based on your results, report the optimal parameters for both algorithms based on a validation analysis and add a figure that supports your selection.
+
+Perform an accuracy assessment for both algorithms using the test set and report your accuracy results. Based on your results, explain what algorithm performs  best.

@@ -1,0 +1,135 @@
+---
+title: 'Advanced Remote Sensing Lab 8: Time series analysis'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session9_TimeSeries"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab due
+March 23 2021
+
+### Goals
+1. To become familiar with the performance of two algorithms (Landtrendr and CCDC) for temporal segmentation of satellite images through the use of APIs implemented in GEE.
+
+2. To become familiar with the parameters and learn how to run the CCDC algorithm using the code editor in GEE
+
+3. To become familiar with the outputs produced by the CCDC algorithm.
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+### Lab instructions
+
+#### 1.	Temporal segmentation using LandTrendr and CCDC
+Let's start exploring the performance of the two algorithms to produce a temporal segmentation within some areas of interest.
+
+Open the API developed for the two algorithms in separate tabs:
+LandTrendr: https://emaprlab.users.earthengine.app/view/lt-gee-pixel-time-series
+CCDC: https://parevalo-bu.users.earthengine.app/view/visualize-ccdc
+
+The CCDC window might not have the map view visible. If that's the case, please drag down the separator bar that appears right below the "search places" window, by the top of the window.
+
+In each one of the windows, zoom in into an area of interest. For the purpose of the lab, we are going to zoom in to the region of Vichada, Colombia. This is a landscape dominated by savanna ecosystems where large-scale agriculture dominated by tree plantations and seasonal crops have been expanding in recent years.
+
+Adjust the parameters defining the date ranges (Jan 01 2000 - Dec 31 2020), band (NDVI) and number of segments (6) on the left of each API so that they look as similar as possible. You can see the study windows and the parameters chosen below.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+include_graphics(fig2path)
+```
+
+Click on approximately the same point in the map view on both tabs. This will automatically produce a time series graph representing the reflectance values of the selected pixel (excluding, clouds, cloud shadows and other low quality pixels) in all the images within the selected period. It will also show the predicted segments for different break-points representing change.
+
+Click on different locations where you suspect that a change took place during the observed period. How do the two algorithms compare?
+
+#### 2. Define study area and apply spatial and temporal filtering
+Launch Google Earth engine in your browser (preferably chrome): https://code.earthengine.google.com/
+
+Produce a polygon representing a study area of interest within the study window using the procedure described in previous labs (lab 5 and 6). The area of interest spans from the municipality of Santa Rosalia in the North-East to the municipality of Puerto Gaitan in the South-West (see image below).
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+Upload API functions that facilitate data processing for CCDC mapping
+```{JavaScript}
+var utils = require('users/parevalo_bu/gee-ccdc-tools:ccdcUtilities/api')
+```
+
+Rename the name of the geometry defining the study area on the top of the code editor as "StudyArea" (as shown in labs 5 and 6). Then use the "getLandsat" function contained in the uploaded API functions to access the Landsat data and apply spatial and temporal filters (see Lab 5). 
+
+The getLandsat function produces a image collection (ee.ImageCollection) using all Landsat data acquired by all Landsat missions  (Landsat 4, 5, 7 and 8) and then applies the cfmask function to eliminate pixel-values corresponding to clouds and cloud shadows.
+
+The rest of the code prints in the console, the number of images selected and centers the map view to the selected study area.
+
+```{JavaScript}
+// Filter image collection by date and a location in the study region
+var filteredLandsat = utils.Inputs.getLandsat()
+    .filterBounds(StudyArea)
+    .filterDate('2000-01-01', '2020-12-31')
+
+print(filteredLandsat.size())
+Map.centerObject(StudyArea,9, 0);
+```
+
+#### 3.	Parameterize the CCDC algorith using the code editor
+Search for the "e.Algorithms.TemporalSegmentation.Ccdc()" function in the "Docs" tab and become familiar with its arguments. Then define the settings for the parameters run the functino Print the results in the console to analyze them
+```{JavaScript}
+// Define parameters for ccdc
+var changeDetection = {
+  breakpointBands: ['GREEN','RED','NIR','SWIR1','SWIR2'],
+  collection: filteredLandsat,
+  tmaskBands: ['GREEN','SWIR2'],
+  minObservations: 6,
+  chiSquareProbability: .99,
+  minNumOfYearsScaler: 1.33,
+  dateFormat: 2,
+  lambda: 20/10000,
+  maxIterations: 25000
+}
+
+var results = ee.Algorithms.TemporalSegmentation.Ccdc(changeDetection);
+print(results, 'ccdc results');
+```
+
+Explore the output bands in the console. Here is a description taken from:
+https://gee-ccdc-tools.readthedocs.io/en/latest/lctutorial/change.html 
+tStart: The start date of each model segment.
+tEnd: The end date of each model segment.
+tBreak: The model break date if a change is detected.
+numObs: The number of observations used in each model segment.
+changeProb: A numeric value representing the multi-band change probability.
+*_coefs: The regression coefficients for each of the bands in the image collection.
+*_rmse: The model root-mean-square error for each segment and input band.
+*_magnitude: For segments with changes detected, this represents the normalized residuals during the change period.
+
+### Homework
+Follow the lab instructions to visualize the results from CCDC in your area of study. Upload the results from both algorithms for five areas undergoing different types of changes. Fill up this form for your report:
+https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUNEgyNDJGM1A1NkZFMVE2SktIQVc5NlRQMi4u 
+
+#### Sources
+https://emapr.github.io/LT-GEE/index.html
+https://gee-ccdc-tools.readthedocs.io/en/latest/index.html 

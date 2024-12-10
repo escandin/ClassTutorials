@@ -1,0 +1,215 @@
+---
+title: 'Remote Sensing Lab 4: Cloud removal'
+
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+## Lab due
+September 23 2021
+
+## Goals
+1. To learn how to interpret and use the QA layer that comes with Landsat collection 2, level 2 products.
+2. To learn how to produce a raster mask, interpret it and use it to exclude areas of no-interest from an image.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+```{r include = FALSE}
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class4/LabFigures"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+#library(kableExtra)
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+library(kableExtra)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+#fig4path=paste(wd, "Fig2NAIP.png", sep="/")
+#fig5path=paste(wd, "Fig3NAIP.png", sep="/")
+#fig6path=paste(wd, "Fig4.png", sep="/")
+
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+#fig5 = readPNG(fig5path)
+#fig6 = readPNG(fig6path)
+```
+
+## Lab instructions
+Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously. Complete the lab deliverables document and upload it to canvas along with the requested pdf file.
+
+Have fun!
+
+## Download data and setup the environment
+1. Reproduce the steps for data downloading described in lab 2 to download from Earth explorer (http://earthexplorer.usgs.gov), the Landsat image that covers the extent of the island of Guam, US acquired on 2021/02/08 (path 100, Row 051).
+
+2. Open R studio, and load required libraries.
+
+Setup the folder where you stored the downloaded image as your working directory. Make sure you use forward slashes in the wd name.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class4/Data"
+setwd(wd)
+dir(wd)
+```
+
+## Load image to the environemnt and crop it to the area of interest
+
+2.  Decompress the file and then stack the bands of interest in one object. Since the stackMeta function has issues (check this: https://stackoverflow.com/questions/66511371/reading-spatial-data-from-landsat-5), we will try another option to stack the files.
+
+Check the names of the files in your working directory. Then copy the name of the compressed (.tar) Landsat file name and paste it in the untar function to decompress the file.
+
+The list.files() function produces a file with the names of all the files in the working directory that share a common pattern. In this case, it will list all files that end with the extension .TIF.
+
+Identify the position of the bands of interest in the tifs object and enter them in the tifBandNames.Then use them to stack the bands and assign a name to the bands within the stack:
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+untar("LC08_L2SR_100051_20200208_20201016_02_T1.tar")
+tifs <- list.files('.', pattern='.TIF')
+tifs # lists all the files in the working folder with the extension .TIF
+tifBandNames=tifs[c(3:9,1)] # enter the index position for the bands of interest
+L8=stack(tifBandNames)
+names(L8)=tifBandNames
+names(L8)
+```
+
+3. Plot the original scene and crop it to the extent of Guam only. We have to use the plotRGB function instead of ggRGB, otherwise the drawExtent() function will not work:
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8, r=5, g=4, b=3, stretch="lin")
+e=drawExtent()
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+```
+
+## Remove clouds and cloud shadows
+4. Cloud removal requires the Landsat quality band. Pixel values in the QA band stores  information about the type of quality issue (if any) associated with each location. First, let's plot and explore the Landsat 8 BQA by clicking on different locations. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+## To read only QA classes, use: 
+plot(L8rsz[[8]])
+click(L8rsz[[8]], n=5, cell=TRUE)
+```
+
+The numbers assigned to different pixels in the QA layer represent different quality attributes defined by the bit values that reproduce such number. You can see the interpetation in Tables 6-2 and 6-3 (pages 13 and 14) here: https://www.usgs.gov/media/files/landsat-8-collection-2-level-2-science-product-guide.
+
+As an example, let's decode the value of a pixel representing 1. cloud, 2. cloud shadow, 3. clear land.
+
+Before that, I have created a function to transform a number in a binary representation in the format used by the Landsat Science Team. Let's run it to load it to the environment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+int2bits=function (x, n, nbits=16)
+  # Converts an integer into the corresponding bit denomination for a number of bits specified by n
+  # x: integer to be converted into bits
+  # n: bit numbers to be retreived. It can be a number or a vector specifying the bit positions to retrieve.
+  #   The first bit is counted as zero and they are read from right to left
+{
+  bit <-intToBits(x)
+  rev(as.numeric(paste(tail(rev(as.integer(bit)), nbits))))[n+1]
+  #if (reverse==TRUE){bit=rev(bit)}
+  #return(bit)
+}
+```
+
+Let's decompose and interpret the QA information embedded in some selected numbers (you can explore other numbers that you obtained when you used the click() function:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+int2bits(22280,  c(0:15)) # Cloud
+int2bits(23888,  c(0:15)) # Cloud shadow
+int2bits(21824,  c(0:15)) # Clear observation of land
+int2bits(21888,  c(0:15)) # Clear observation of water
+```
+
+We will use those bit values to create masks representing clouds and cloud shadows. The package RStoolbox has a function to classify different components of the QA layer (classifyQA()), unfortunately it only works for Landsat collection 1 which is going to be unavailable very soon. Let's instead, load a function that I created for that purpose:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+bitMask=function(r, bit){
+  # produces a mask that excludes as NA, pixels with a value of 1 in the bit position designated in the argument "bit" in the landsat QA layer. All other pixels are assigned a value of 1
+  x <- calc(r, fun = function(x) int2bits(x, bit))
+  v <- raster::getValues(x)
+  v[v==1]=NA
+  v[v==0]=1
+  x <- raster::setValues(x, v)
+  return(x)
+}
+```
+
+The bitMask function creates a mask that excludes pixels in the QA layer with a value of 1 in a bit position designated by the argument "bit". For instance, pixel values with a value equal to 1 in bit 3 (correspond to clouds) will be re-classified as NA and all other pixels will be reclassified as 1. This function might take several minutes to process so be patient.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clouds=bitMask(L8rsz[[8]],3)
+plot(clouds)
+```
+
+Multiplying the raster image by the cloud mask, removes areas covered by clouds.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8rszMskd=L8rsz*clouds
+plotRGB(L8rszMskd, r=5, g=4, b=3, stretch="lin")
+```
+
+Let's remove cloud shadows. For that purpose we use the fourth bit instead of the third.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+shadows=bitMask(L8rsz[[8]],4)
+plot(shadows)
+```
+
+Multiplying the raster image by the shadow mask, removes shadowed areas.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8rszMskd2=L8rszMskd*shadows
+plotRGB(L8rszMskd2, r=5, g=4, b=3, stretch="lin")
+```
+
+5. Produce a pdf with three rgb composites for the cropped image. 1. before masking, 2. after cloud masking, 3. after masking clouds and cloud shadows
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("VGutierrez_Lab4.pdf")
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+plotRGB(L8rszMskd, r=5, g=4, b=3, stretch="lin")
+plotRGB(L8rszMskd2, r=5, g=4, b=3, stretch="lin")
+dev.off()
+```
+
+## Lab deliverables
+1.	Download a Landsat 8 image from Collection 2, level 2 that includes the island of Saint Martin acquired on 2021/03/06 (LC08_L2SP_003047_20210306_20210317_02_T1).
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+2.	Define your study area, including the full island similar to this extent.
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+3. Produce a single pdf file with three RGB images as shown in step 5 of the lab: 1. Unmasked image, 2. image with clouds masked out, 3. Image with clouds and cloud shadows masked out. Upload the pdf to module 4 in canvas (3 pts).
+
+
+4. For the numbers below, mark with an x the corresponding classes (some values can have more than one) in the QA layer produced for Landsat 8, collection 2, level 2. Upload your answers to module 4 in canvas (1 pt):
+
+21952 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water 
+
+22018 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water 
+
+23826 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water 
+
+55052 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water
+
+
+
+
+
+
+
+

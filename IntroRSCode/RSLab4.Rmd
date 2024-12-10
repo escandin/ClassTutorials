@@ -1,0 +1,227 @@
+---
+title: 'Remote Sensing Lab 4: Cloud removal'
+
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+## Lab due
+September 25 2024
+
+## Goals
+1. To learn how to interpret and use the QA layer that comes with Landsat collection 2, level 2 products.
+2. To learn how to produce a raster mask, interpret it and use it to exclude areas of no-interest from an image.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+```{r include = FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class4_CloudRemoval/Class4_lab"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+#library(kableExtra)
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+library(kableExtra)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+#fig4path=paste(wd, "Fig2NAIP.png", sep="/")
+#fig5path=paste(wd, "Fig3NAIP.png", sep="/")
+#fig6path=paste(wd, "Fig4.png", sep="/")
+
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+#fig5 = readPNG(fig5path)
+#fig6 = readPNG(fig6path)
+```
+
+## Lab instructions
+Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously. Complete the lab deliverables document and upload it to canvas along with the requested pdf file.
+
+Have fun!
+
+## Download data and setup the environment
+1. Reproduce the steps for data downloading described in lab 2 to download from Earth explorer (http://earthexplorer.usgs.gov), the Landsat image that covers the extent of the island of Guam, US acquired on 2023/08/19 (path 100, Row 051).
+
+2. Open R studio, and load required libraries.
+
+Setup the folder where you stored the downloaded image as your working directory. Make sure you use forward slashes in the wd name.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(terra)
+library(parallel)
+#library(rgdal)
+#library(RStoolbox)
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class4_CloudRemoval/Class4_lab"
+setwd(wd)
+dir(wd)
+```
+
+## Load image to the environment and crop it to the area of interest
+
+2.  Decompress the file and then stack the bands of interest in one object. \
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Check the names of the files in your working directory usng the list.files() function. The list.files() function produces a file with the names of all the files in the working directory that share a common pattern
+tars=list.files('.', pattern='.tar')
+
+#Then decompress the .tar file of interest.
+tars
+untar(tars[2]) # If you have more than one .tar file, select the index representing the file of interest
+
+# Produce a list of files in the working directory with the extension .tif.
+tifs <- list.files('.', pattern='.TIF')
+tifs # lists all the files in the working folder with the extension .TIF
+
+#Identify the position of the bands of interest in the tifs object and enter them in the tifBandNames. We added in this case the QA_PIXEL layer that contains information about pixel quality.
+tifBandNames=tifs[c(3:9,1)] # enter the index position for the bands of interest
+
+# Then use them to stack the bands and assign a name to the bands within the stack
+L8=rast(tifBandNames)
+names(L8)=tifBandNames
+names(L8)
+```
+
+3. Plot the original scene and crop it to the extent of Guam only.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8, r=5, g=4, b=3, stretch="hist")
+e=draw()
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+```
+
+## Remove clouds and cloud shadows
+4. The QA_PIXELlayer stores information about the type of quality issue (if any) associated with each pixel location. Let's plot and explore the Landsat 8 QA_PIXEL layer by clicking on different locations. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+## To read only QA classes, use: 
+plot(L8rsz[[8]])
+click(L8rsz[[8]], n=5, cell=TRUE)
+```
+
+The numbers assigned to different pixels in the QA layer represent different quality attributes defined by the bit values that reproduce such number. You can see the interpretation in Tables 6-2 and 6-3 (pages 13 and 14) here: https://www.usgs.gov/media/files/landsat-8-collection-2-level-2-science-product-guide.
+
+As an example, let's decode the value of a pixel representing 1. cloud, 2. cloud shadow, 3. clear land.
+
+Before that, I have created a function that transforms a number in a binary representation in the format used by the Landsat Science Team. Let's run it to load it to the environment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+int2bits <- function(x, bit_positions, nbits=16) {
+  # Convert integer to binary
+  bit <- intToBits(x)
+  # Retrieve the specified bit positions
+  bits <- rev(as.numeric(paste(tail(rev(as.integer(bit)), nbits))))
+  # Return the values of the requested bits
+  return(bits[bit_positions + 1])
+}
+```
+
+Let's decompose and interpret the QA information embedded in some selected numbers (you can explore other numbers that you obtained when you used the click() function:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+int2bits(22280,  c(0:15)) # Cloud, high confidence
+int2bits(23888,  c(0:15)) # Cloud shadow, high confidence
+int2bits(21824,  c(0:15)) # Clear observation of land
+int2bits(21888,  c(0:15)) # Clear observation of water
+```
+
+We will use those bit values to create a mask representing clouds and cloud shadows. Let's load a function that I created for that purpose:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Function to create a mask by checking multiple bit positions
+bitMask <- function(r, bits) {
+  # Get raster values
+  v <- terra::values(r)
+  
+  # Parallel processing setup
+  n_cores <- detectCores() - 1  # Use available cores minus 1 for efficiency
+  cl <- makeCluster(n_cores)
+  
+  # Ensure the cluster is stopped when the function exits
+  on.exit(stopCluster(cl))
+  
+  # Export required functions and variables to the cluster
+  clusterExport(cl, list('int2bits', 'bits'), envir = environment())
+  
+  # Parallelize the masking operation
+  v_masked <- parApply(cl, v, 1, function(i) {
+    bit_values <- int2bits(i, bits)
+    # If any bit position has a 1, mark it as NA
+    if (any(bit_values == 1)) {
+      return(NA)
+    } else {
+      return(1)
+    }
+  })
+  
+  # Set the masked values back into the raster
+  x <- terra::setValues(r, v_masked)
+  return(x)
+}
+
+```
+
+The bitMask function creates a mask that excludes pixels with a value of 1 in a bit position designated by the argument "bit" in the QA layer. For instance, pixel values with a value equal to 1 in bits 3 and 4 (correspond to clouds and cloud shadows) will be re-classified as NA and all other pixels will be reclassified as 1. This function might take several minutes to process so be patient. Also, please ignore the warning messages. They do not affect the result
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+cloudMsk=bitMask(L8rsz[[8]],c(3, 4))
+plot(cloudMsk)
+```
+
+Multiplying the raster image by the cloud mask, removes areas covered by clouds.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8rszMskd=L8rsz*cloudMsk
+plotRGB(L8rszMskd, r=5, g=4, b=3, stretch="lin")
+click(L8rszMskd[[5]], n=5, cell=TRUE)
+```
+
+5. Produce a pdf with three rgb composites for the cropped image. 1. before masking, 2. after masking clouds and cloud shadows
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("VGutierrez_Lab4.pdf")
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+plotRGB(L8rszMskd, r=5, g=4, b=3, stretch="lin")
+dev.off()
+```
+
+## Lab deliverables
+1.	Download a Landsat 8 image from Collection 2, level 2 that includes Dominica acquired on 2023/09/14 (LC09_L2SP_001049_20230914_20230916_02_T1). Make sure to select "World Features".
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+2.	Define your study area, including the full island similar to this extent.
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+3. Produce a single pdf file with two RGB images as shown in step 5 of the lab: 1. Unmasked image, 2. image with clouds and cloud shadows masked out. Upload the pdf to module 4 in canvas (3 pts).
+
+
+4. For the numbers below, mark with an x the corresponding classes (some values can have more than one) in the QA layer produced for Landsat 8, collection 2, level 2. Upload your answers to module 4 in canvas (1 pt):
+
+21952 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water 
+
+22018 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water 
+
+23826 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water 
+
+55052 ___ dilated cloud, ___ cirrus, ___ Cloud, ___ Shadow,___ Water
+
+
+
+
+
+
+
+

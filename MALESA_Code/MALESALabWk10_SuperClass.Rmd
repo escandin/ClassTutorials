@@ -1,0 +1,365 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 10: Supervised classification'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goals
+To learn:
+1. How to fit and interpret a supervised classification using tree based methods and 
+2. How to use the fitted model to produce spatial predictions.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use three machine learning methods to predict the distribution of four vegetation communities in Kyrgyzstan. Predictors or "features" correspond to spectral data obtained from Landsat imagery, distance to settlements, and several topographical indices.
+
+
+Have fun!
+
+### 1. System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("//Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week10_SuperClass")
+setwd(wd)
+library(terra)
+library(sf)
+library(ggplot2)
+library(DataExplorer)
+library(randomForest)
+library(xgboost)
+library(rpart)
+library(rattle)
+library(pdp)
+library(iml)
+```
+
+#### Load and prepare spatial files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Stack of raster predictors:
+kgz=terra::rast("RasterStack_KGZ.tiff")
+
+# Scale dataset so that the magnitude of variables is comparable
+kgzScaled=terra::scale(kgz)
+names(kgzScaled) = c("Aspect", "B2", "B3", "B4", "B5",
+               "B6", "B7", "DEM", "SettDist", 
+               "LS", "NDVI", "NDWI", "SVF",
+               "Slope", "TWI", "VD")
+
+# B2-B7: ground reflectance data for bands 1 through seven obtained from Landsat data
+# SettDist: distance to settlements
+# LSF: LS_Factor
+# SVF: Sky View Factor
+# TWI: Topographic Wetness Index
+# VD: Valley Depth
+
+# Ground data representing the response variable as points
+unzip("VegPlots.zip")
+classes=st_read("Vegetation Plots.shp") # open in sf()
+classes=terra::vect(classes)  # Transform to terra()     
+```
+
+#### Extract data to dataframe and prepare for modeling
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Extract data into a dataframe
+sampdata=terra::extract(kgzScaled, classes, xy=TRUE)
+
+# add response variable to the datafame
+sampdata$veg=classes$Vegetation
+sampdata=subset(sampdata, complete.cases(sampdata))
+sampdata$veg=as.factor(sampdata$veg)
+names(sampdata)
+
+# make sure that the names of the stack are the same as the names of the dataframe. This is important to make sure the prediction works!
+names(kgzScaled)==names(sampdata[-c(1,18:20)])
+
+#Subset data before modeling to remove irrelevant variables and also to make the variables in the dataframe match the variables in the raster stack
+#names(sampdata)==names(kgz)
+#sampdata=sampdata[,-c(1, 18:19)]
+```
+
+#### Explore the data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dfSummary(refdata) # Check data structure
+sampdata %>%
+    create_report(
+        output_file = paste("Report", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), sep=" - "),
+        report_title = "EDA Report - Plant communities",
+        y = "veg"
+    )
+```
+
+# Band selection
+We will do variable selection as part of the class excercise
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot_bar(sampdata)
+
+ggplot(sampdata, aes(x = veg, y = DEM)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = NDWI)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = B5_Ref)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = Slope)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = SettDist)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = SVF)) + geom_boxplot()
+ggplot(sampdata, aes(x = veg, y = VD)) + geom_boxplot()
+
+plot_correlation(sampdata)
+```
+
+#### Fit different ML methods and interpret results
+
+##### Decision trees
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dt=rpart(veg~DEM + NDWI + B5 + Slope + SettDist + SVF + VD, data=sampdata, method="class")
+# Check the arguments for rpart.control
+# Explain the tree outputs
+
+printcp(dt) #displays the results
+plotcp(dt)
+summary(dt)
+
+dt$variable.importance
+plot(dt, uniform=TRUE, 
+     main="Classification Tree for plants")
+text(dt, use.n=TRUE, all=TRUE, cex=.8)
+
+fancyRpartPlot(dt, caption = NULL)
+
+printcp(dt)
+
+#Pruning the tree
+dt$cptable # complexity table. 
+# The first element represents the levels in the tree
+# The second element shows the complexity parameter. Lower values correspond to more complex trees
+# N split corresponds to the number of nodes in the tree
+# rel error is the error of the classification at diferent nodes
+# x error is the expected error if the model was applied to new data
+# xstd is the standard deviation of xerror
+plotcp(dt)
+dtprune=prune(dt, cp= dt$cptable[which.min(dt$cptable[,"xerror"]),"CP"])
+
+# plot the pruned tree 
+plot(dtprune, uniform=TRUE, 
+     main="Pruned Classification Tree for vegetation communities")
+text(dtprune, use.n=TRUE, all=TRUE, cex=.8)
+```
+
+##### Random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rf=randomForest(veg~DEM + NDWI + B5 + Slope + SettDist + SVF + VD, data=sampdata, ntree=200, importance=TRUE)
+rf
+rf$importance
+varImpPlot(rf)
+```
+
+#####  Extreme Boosting machine 
+https://xgboost.readthedocs.io/en/stable/tutorials/model.html 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sampdataX=sampdata[c("B5", "DEM", "SettDist", "NDWI", "SVF", "Slope", "VD")]
+names(sampdataX)=c("B5", "DEM", "SettDist","NDWI", "SVF", "Slope", "VD")
+#sampdataX_scaled <- scale(sampdataX)
+veg=sampdata$veg
+
+#I have to convert variables into an xgb matrix. xgb only accepts integers starting from zero for multiclass models
+labels = as.numeric(veg)-1 # The names of the vegetation types are converted into numbers starting from zero in alphabetical order
+
+dtrain <- xgb.DMatrix(data = as.matrix(sampdataX), label = labels, missing = NA)
+
+# Set parameters for the model
+param <- list(
+  objective = "multi:softprob",  # Multiclass classification
+  num_class = 4,  # Adjust based on the number of classes
+  eta = 0.1,  # learning rate
+  max_depth = 6, # maximum depth of the tree
+  eval_metric = "merror"  # Error rate
+)
+
+# Train the model using xgb.train()
+xgb_model <- xgb.train(params = param, data = dtrain, nrounds = 500, nthread = 6)
+
+# Variable importance
+importance <- xgb.importance(feature_names = colnames(sampdataX), model = xgb_model)
+head(importance)
+xgb.plot.importance(importance_matrix = importance)
+```
+
+#### Evaluate marginal effects
+
+##### For random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+### For one predictor
+
+# Define predictor object for the model
+predictor_rf <- Predictor$new(rf, data = sampdataX, y = veg)
+
+# Plot marginal effects for a specific feature
+effect <- FeatureEffect$new(predictor_rf, feature = "Slope", method = "pdp")
+plot(effect)
+
+effect2 <- FeatureEffect$new(predictor_rf, feature = "DEM", method = "pdp")
+plot(effect2)
+
+effect3 <- FeatureEffect$new(predictor_rf, feature = "B5", method = "pdp")
+plot(effect3)
+
+### For two predictors
+pdp_two_features_rf <- FeatureEffect$new(predictor_rf, 
+                                         feature = c("B5", "NDWI"), 
+                                         method = "pdp")
+
+# Plot the 2D PDP
+plot(pdp_two_features_rf)
+```
+
+##### For xgboost
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Prepare the Predictor object from iml package
+predictor_xgb <- Predictor$new(xgb_model, data = as.data.frame(sampdataX), y = labels, 
+                               predict.function = function(model, newdata) {
+                                 matrix(predict(model, as.matrix(newdata)), ncol = 4, byrow = TRUE)
+                               })
+
+# Create a partial dependence plot for a single feature
+pdp_iml <- FeatureEffect$new(predictor_xgb, feature = "B5", method = "pdp")
+plot(pdp_iml)
+
+### For two predictors
+xgb_pred <- function(model, newdata) {
+  preds <- predict(model, as.matrix(newdata))
+  preds <- matrix(preds, ncol = 4, byrow = TRUE)  # Reshape the predictions
+  return(preds)  # Returns the predicted probabilities for each class
+}
+
+predictor_xgb <- Predictor$new(xgb_model, 
+                               data = as.data.frame(train_data), 
+                               y = train_labels, 
+                               predict.function = xgb_pred)
+
+# Generate a PDP for two predictors
+pdp_two_features <- FeatureEffect$new(predictor_xgb, 
+                                      feature = c("B5", "NDWI"), 
+                                      method = "pdp")
+
+# Plot the 2D PDP
+plot(pdp_two_features)
+```
+
+#### Produce predicted maps and save them
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+### For decision trees
+
+dtpred=terra::predict(kgzScaled, dtprune)
+plot(dtpred)
+
+# Let's mask out invalid pixels
+msk=sum(kgz)
+msk[!is.na(msk)]<-1
+plot(msk)
+
+dtpred=dtpred*msk
+plot(dtpred)
+
+# To produce a single-layer raster where each pixel represents the layer with the highest probability:
+# Extract the values from the raster stack as a matrix
+dtpredVal <- values(dtpred)
+
+# Determine the index of the layer with the highest probability for each pixel
+# max.col finds the column index (i.e., layer) with the max value for each row (i.e., pixel)
+dtpredmaxVal <- max.col(dtpredVal, ties.method = "first")
+
+# Create a new raster to store the result
+dtpredRast <-msk  # Use one layer to initialize the raster
+
+# Assign the layer indices to the new raster
+values(dtpredRast) <- dtpredmaxVal
+plot(dtpredRast)
+
+
+### For Random Forest
+rfpred=terra::predict(kgzScaled, rf)
+plot(rfpred)
+
+### For xgb
+# Subset kgz with only the variables used to calibrate the model
+kgzSub=kgzScaled[[c("B5", "DEM", "SettDist", "NDWI", "SVF", "Slope", "VD")]]
+plot(kgzSub)
+
+# Let's mask (kgzSub) to remove invalid pixels
+kgzSub=kgzSub*msk
+plot(kgzSub)
+
+# Convert kgz to matrix
+kgz_matrix <- as.matrix(kgzSub)
+length(which(!is.na(kgz_matrix)==TRUE))
+kgz_matrix=subset(kgz_matrix, complete.cases(kgz_matrix))
+
+#xgbpred <- predict(xgb_model, as.matrix(kgzSub))
+xgbpred <- predict(xgb_model, kgz_matrix)
+
+# Reshape the prediction output to have one row per observation and one column per class
+xgbpred_matrix <- matrix(xgbpred, nrow = nrow(kgz_matrix), ncol = 4, byrow = TRUE)
+
+# For each observation, select the class with the highest probability
+predicted_classes <- max.col(xgbpred_matrix)  # Subtract 1 because classes are 0-indexed
+
+# Make predictions
+
+# Create a raster template
+xgRast=sum(kgzSub)
+
+# make sure that the number of valid pixels in the template is equal to the number of predicted values
+length(xgRast[!is.na(xgRast)])== length(predicted_classes)
+
+# Replace value for valid pixels to the predicted values
+xgRast[!is.na(xgRast)] <- predicted_classes
+# Count how many pixels are not NA
+plot(xgRast)
+
+writeRaster(dtpred, "dtpred.tif")
+writeRaster(rfpred, "rfpred.tif")
+writeRaster(xgRast, "xgbRast.tif")
+```
+
+#### Lab report
+This lab report is due in two weeks (October 12th), after covering supervised regression.
+
+Produce two machine learning models using a) random forest b) another algorithm and use them to predict your response variable in your study area.
+
+To upload in canvas:
+1. A pdf with two maps produced in QGIS or ArcGIS with the predicted value for the response. Make sure to  assign an appropriate palette that enables proper visualization.
+
+2. Figures representing variable importance for both algorithms.
+
+3. Answer to the questions below based on your results:
+
+a. What are the main differences between both predictions in terms of the spatial distribution of the predicted response?
+
+b. What criteria did you use to select the final variables? Which ones did you select?
+
+c. Are the most important variables estimated by both algorithm similar? What are the main differences? 
+
+d. Based on the results of the partial dependence plots, what kinds of hypotheses can you produce about the correlation between the three most important variables and the response?
+
+e. Based on your preliminary evaluation, what do you think is a better algorithm? Please justify.

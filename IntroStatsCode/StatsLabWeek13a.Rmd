@@ -1,0 +1,478 @@
+---
+title: 'Spatial Analysis. Lab Week 13: Multiple linear regression (diagnostics and evaluation)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+fig2path=paste(wd, "Fig2Lab5.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Lab due
+April 19 2023
+
+## Goal
+At the end of this lab, students will know:
+
+- how to implement a multiple linear regression in R.
+
+- how to identify and avoid collinearity among candidate predictors.
+
+- how to implement an analysis for variable selection including correlation analysis and step-wise regression.
+
+- to interpret the marginal effect of different variables on predictions.
+
+- to test assumptions and evaluate the robustness of multiple modeling outcomes.
+
+## Total score
+The lab counts for up to 5 points towards the final grade of the course.
+
+### Background
+
+Please review the class materials for background on how to diagnose regression analysis.
+
+### Example 1.
+For this example we will use data from the UN-HDI to predict healthy life expectancy using multiple linear modeling. 
+
+You can download the .csv file associated to these datasets from the module "Datasets" in canvas. Please read the description and access the links to become familiar with the characteristics of the datasets.
+
+#### 0. Setup the environment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module13_MultipleRegression"
+setwd(wd)
+
+# This is an additional directory where I have the data stored
+datadir="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/Datasets"
+dir()
+```
+
+#### 1. Load and format the data
+This code is the same as the one used for the previous lab. In order to avoid having to create data subsets to remove NAs from compared variables, we will create a subset of the entire database with variables that have just a few NAs. In this case, we will load the data and then remove from the datasets all variales that have more than 15 NAs
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hdi=read.csv(paste0(datadir, "/UNHDI_2020_w_Happiness.csv"))
+summary(hdi)
+ncol(hdi)
+
+# This is the problem with removing NAs to all the dataset
+nrow(subset(hdi, complete.cases(hdi)))
+
+# Therefore we will select variables that have no more than 15 NAs
+# Count NAs per column
+sapply(hdi, function(x) sum(is.na(x)))
+#hist(sapply(hdi, function(x) sum(is.na(x))))
+summary(sapply(hdi, function(x) sum(is.na(x))))
+
+# Identify columns with more than 15 NAs
+dropnames=names(which(sapply(hdi, function(x) sum(is.na(x)))>15))
+length(dropnames)
+
+# Remove those columns from DB:
+# The %in% operator in R is used to check if the values of the first 
+# argument are present in the second argument and returns a logical vector
+# indicating if there is a match or not for its left operand. 
+# https://sparkbyexamples.com/r-programming/usage-of-in-operator-in-r/
+hdi=hdi[ , -which(names(hdi) %in% dropnames)]
+ncol(hdi)
+nrow(hdi)
+
+# Remove rows with NAs in at least one variable
+hdi=subset(hdi, complete.cases(hdi))
+nrow(hdi)
+```
+
+#### 2. Data collection
+Let's become familiar with the variables available in the dataset and select some that we consider could potentially relate to heatlhy life expectation_
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(hdi)
+
+hdisub=hdi[, c(5, # total pop 2019  
+               8, # pop growth 2015-20
+               9, # urban pop
+               14, #GNI
+               22, # expected years schooling
+               32, # share of seats in parlament by women
+               43, # HLE
+               44, # health expenditure
+               48, # labor share of gdp on wages ss
+               49, # consumer price index
+               54, # unemployment
+               61, # trade
+               63, # financial flows-foreign
+               70, # physicians x 10k people
+               71, # pupil/teacher ratio primary
+               73, # rural population access electricity
+               79, # co2 emissions
+               80, # forest area
+               81, # change forest area
+               82, # use of fertilizers
+               85 # species extinction
+)]
+           
+# let's shorten the names to make them visualizable           
+names(hdisub)= c("totPop", "popGrowth", "urbanPop", "GNI", "yearsSchooling",
+                 "seatsByWomen", "HLI", "healthExpenditure", "GDPonWageSS", 
+                 "ConsumerPrices", "unemployment", "trade", "Remittances", 
+                 "physicians", "pupilTeacher", "RuralPopElect", "co2", 
+                 "forestArea", "forestChange", "fertilizerUse", "SpExtinction")
+```
+
+#### 3. Correlation analysis
+Let's become familiar with the level of correlation between the different variables considered.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+cormat=cor(hdisub,method="pearson")
+
+# you can check different options for corplot here: https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html 
+library(corrplot)
+corrplot(cormat, method = 'number') # colorful number)
+
+# the argument "order" arranges the variables in alphabetical order
+corrplot(cormat, method = 'number', order="alphabet") 
+
+# Let's add more arguments to show only the upper part of the matrix and smaller fibt
+corrplot(cormat, method = 'number', order = 'alphabet', type = 'upper', number.cex=0.5, tl.cex=0.5)
+```
+
+#### 4. Variable pre-selection
+Based on the correlation results and to make the analysis more manageable, let's remove any variables that have an absolute correlation with the response of less than ~ 0.3.
+
+Note: This is a rather arbitrary threshold and should be inspected careful as you become more familiar with the characteristics of the data.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Let's create an object that extracts all the correlation values for the row associated to the response variable (HLI) 
+head(cormat, 7)
+hlicor=cormat[7,]
+hlicor
+
+# Let's identify the names of the predictors with an absolute correlation lower than 0.3
+dropvar=sort(names(which(abs(hlicor)<0.3)))
+
+# Let's remove all variables that met the condition based on their names
+ncol(hdisub)
+hdisub=hdisub[ , -which(names(hdisub) %in% dropvar)]
+ncol(hdisub)
+
+# let's pre-visualize correlation plots
+plot(hdisub)
+
+# Let's plot the correlation again with the remainding variables
+cormat=cor(hdisub,method="pearson")
+corrplot(cormat, method = 'number', order = 'alphabet', type = 'upper', number.cex=0.5, tl.cex=0.5)
+```
+
+#### 5. preliminary multiple regression
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mod=lm(HLI~., data=hdisub)
+summary(mod)
+```
+
+#### 6. Variable selection
+Let's calculate the variable inflation factor in order to identify any potential collinearity. VIF values are always higher than 1 with no upper limit. As a rule of thumb, values between 1 and 5 correspond to moderate correlation and variables with a VIF higher than 5 are severely correlated.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# From here: https://www.statology.org/variance-inflation-factor-r/
+#create vector of VIF values
+vif_values <- vif(mod)
+vif_values
+
+#create horizontal bar chart to display each VIF value
+barplot(vif_values, main = "VIF Values", horiz = TRUE, col = "steelblue")
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+```
+
+GNI has a VIF > 5 so let's remove it from the model and see how does the model fare without those variables
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hdisub=hdisub[, -3]
+names(hdisub)
+
+mod=lm(HLI~., data=hdisub)
+summary(mod)
+
+vif(mod)
+summary(mod)
+
+vif_values <- vif(mod)
+vif_values
+
+cormat=cor(hdisub,method="pearson")
+corrplot(cormat, method = 'number', order = 'AOE', type = 'upper', number.cex=0.5, tl.cex=0.5)
+```
+
+#### 7. Step-wise regression
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+?step
+slm=step(lm(HLI~., data=hdisub), direction="backward")
+summary(slm)
+```
+
+Let's select the model with the lowest AIC and diagnose it.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mod1=lm(HLI~ physicians+fertilizerUse+yearsSchooling+urbanPop+RuralPopElect, 
+        data=hdisub)
+
+summary(mod1)
+plot(mod1)
+```
+
+The diagnostics plots sugest that the regression is appropriate. Let's check whether we can suppose a linear regression between predictors and response in the last model
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(hdisub[, c(2, 3, 4, 6, 8, 11)])
+plot(hdisub[, c(2, 3, 4, 6, 8, 11)])
+```
+
+It looks like the correlation between the response and several of the predictors is not linear. Let's plot them individually and assess whether a variable transformation helps
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(hdisub$HLI~hdisub$physicians)
+plot(hdisub$HLI~hdisub$fertilizerUse)
+
+
+plot(hdisub$HLI~log(hdisub$physicians))
+plot(hdisub$HLI~log(hdisub$fertilizerUse))
+```
+
+It seems like applying a logarithmic transformation to the response helps, let's create two additional variables in the database representing the logarithm of physicians and fertilizer use
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hdisub$logphysic=log(hdisub$physicians)
+hdisub$logfertil=log(hdisub$fertilizerUse)
+```
+
+And run the model again with the transformed variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mod1=lm(HLI ~logphysic+logfertil+yearsSchooling+
+           urbanPop+RuralPopElect, data=hdisub)
+summary(mod1)
+plot(mod1)
+```
+
+#### 8. Interpreting parameter estimates
+Now that we selected the final model, it would be good to find a way to assess the relative contribution of the variables to the prediction of the response variable. The parameter value  provide useful information about this but only when variables are standardized. Let's check how the parameter estimates change when the predictors are standardized.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+z.score=function(x){
+  z=(x-mean(x))/sd(x)
+  return(z)
+}
+
+hdisub.z=apply(hdisub, 2, FUN=z.score)
+hdisub.z=data.frame(hdisub.z)
+
+mod1.z=lm(HLI ~logphysic+logfertil+yearsSchooling+
+           urbanPop+RuralPopElect, data=hdisub.z)
+
+#See that the statistics for the model remain the same but the parameter estimates change
+summary(mod1)
+summary(mod1.z)
+```
+
+After, standardization, the parameter estimates can be used to assess the relative influence of variables on the prediction. Let's plot it:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(dotwhisker)
+library(dplyr)
+?dwplot
+dwplot(mod1)
+dwplot(mod1.z)
+```
+
+### Exercise 2. multiple regression with the US census
+For this exercise, we will work with data from the US census. We will access the data using a procedure that was described for lab 2.
+
+Some of the code is adapted from this highly recommended source: https://walker-data.com/census-r/modeling-us-census-data.html 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(tidycensus)
+library(sf)
+
+# Explore variables available to download
+acs2020 <- load_variables("2020", "acs5", cache = TRUE)
+View(acs2020)
+
+# Specify the counties that you want to analyze in PA
+name_counties <- c("Philadelphia", "Montgomery", "Bucks", 
+                  "Lehigh", "Berks", "Lancaster", "Chester",
+                  "Delaware")
+
+# define the variables to download (based on the description included in the acs2020 object above)
+variables_to_get <- c(
+  median_value = "B25077_001",
+  median_rooms = "B25018_001",
+  median_income = "DP03_0062",
+  total_population = "B01003_001",
+  median_age = "B01002_001",
+  pct_college = "DP02_0068P",
+  pct_foreign_born = "DP02_0094P",
+  pct_white = "DP05_0077P",
+  median_year_built = "B25037_001",
+  percent_ooh = "DP04_0046P"
+)
+
+# Download the data for the selected counties from the Ameerican Community survey 2020. By setting the output=wide, we ensure that the data are downloaded with a wide format.
+dataset <- get_acs(
+  geography = "tract",
+  variables = variables_to_get,
+  state = "PA",
+  county = name_counties,
+  geometry = TRUE,
+  output = "wide",
+  year = 2020
+)
+```
+The candidate variables include:
+
+"median_valueE: The median home value of the Census tract (our outcome variable);
+
+median_roomsE: The median number of rooms for homes in the Census tract;
+
+total_populationE: The total population;
+
+median_ageE: The median age of the population in the Census tract;
+
+median_year_builtE: The median year built of housing structures in the tract;
+
+median_incomeE: The median income of households in the Census tract;
+
+pct_collegeE: The percentage of the population age 25 and up with a four-year college degree;
+
+pct_foreign_bornE: The percentage of the population born outside the United States;
+
+pct_whiteE: The percentage of the population that identifies as non-Hispanic white;
+
+percent_oohE: The percentage of housing units in the tract that are owner-occupied."
+
+Let's explore the downloaded data
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(tidyverse)
+library(patchwork)
+
+mhv_map <- ggplot(dataset, aes(fill = median_valueE)) + 
+  geom_sf(color = NA) + 
+  scale_fill_viridis_c(labels = scales::label_dollar()) + 
+  theme_void() + 
+  labs(fill = "Median home value ")
+
+mhv_histogram <- ggplot(dataset, aes(x = median_valueE)) + 
+  geom_histogram(alpha = 0.5, fill = "navy", color = "navy",
+                 bins = 100) + 
+  theme_minimal() + 
+  scale_x_continuous(labels = scales::label_number_si(accuracy = 0.1)) + 
+  labs(x = "Median home value")
+
+mhv_map + mhv_histogram
+```
+
+You can see in the histogram that the distribution of the response variable is skewed to the right, with median home values clustering towards lower values and a long tail of expensive values. This is common for house values in metropolitan areas. This skweness can derive into violations in the assumption of normality in model residuals. Let's see how much a log-transformation of the response variable can make the distribution closer to normal.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(tidyverse)
+library(patchwork)
+
+mhv_map_log <- ggplot(dataset, aes(fill = log(median_valueE))) + 
+  geom_sf(color = NA) + 
+  scale_fill_viridis_c() + 
+  theme_void() + 
+  labs(fill = "Median home\nvalue (log)")
+
+mhv_histogram_log <- ggplot(dataset, aes(x = log(median_valueE))) + 
+  geom_histogram(alpha = 0.5, fill = "navy", color = "navy",
+                 bins = 100) + 
+  theme_minimal() + 
+  scale_x_continuous() + 
+  labs(x = "Median home value (log)")
+
+mhv_map_log + mhv_histogram_log
+```
+
+We can see that the distribution now follows a distribution that is much closer to. normal.
+
+Let's transform two of the variables to better represent the association between predictors and response. The first variable is population density (people/sqKm) and median_structure_age which is the median age of the houses, both per census tract.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(sf)
+library(units)
+
+dfw_data_for_model <- dataset %>%
+  mutate(pop_density = as.numeric(set_units(total_populationE / st_area(.), "1/km2")),
+         median_structure_age = 2018 - median_year_builtE) %>%
+  select(!ends_with("M")) %>% 
+  rename_with(.fn = ~str_remove(.x, "E$")) %>%
+  na.omit()
+```
+
+Perform a first regression model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+formula <- "log(median_value) ~ median_rooms + median_income + pct_college + pct_foreign_born + pct_white + median_age + median_structure_age + percent_ooh + pop_density + total_population"
+
+model1 <- lm(formula = formula, data = dfw_data_for_model)
+
+summary(model1)
+plot(model1)
+```
+
+Inspect colinearity:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(corrr)
+
+dfw_estimates <- dfw_data_for_model %>%
+  select(-GEOID, -median_value, -median_year_built) %>%
+  st_drop_geometry()
+
+correlations <- correlate(dfw_estimates, method = "pearson")
+
+network_plot(correlations)
+
+library(car)
+
+vif(model1)
+```
+
+The most serious issue is with median_income with a VIF equal to 6.6. Let's eliminate it
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+formula2 <- "log(median_value) ~ median_rooms + pct_college + pct_foreign_born + pct_white + median_age + median_structure_age + percent_ooh + pop_density + total_population"
+
+model2 <- lm(formula = formula2, data = dfw_data_for_model)
+
+summary(model2)
+vif(model2)
+plot(model2)
+```
+
+### Lab report
+Based on the instructions provided for the final project in canvas ( https://templeu.instructure.com/courses/124534/pages/final-project-instructions?module_item_id=5443868) Please provide the information below:
+
+1. Final project introduction
+
+2. The following sections for the final project methods
+
+    -Population
+
+    -Data source
+
+    -Variables to be considered (Excercise 1, step 2)
+    
+3. The following sections for the final project results:
+
+    -A correlation plot for all considered variables (Exercise 1, step 3)
+
+    -A list of  variables that have an absolute correlation coefficient lower than 0.3 (Excercise 1, step 4)
+
+    -The summary statistics of a preliminary model after removing variables with an absolute correlation coefficient lower than 0.3 (Exercise 1, step 4)
+
+    -The results of the VIF collinearity test and a list of variables with serious collinearity based on the VIF results (Excercise 1, step 6).
+    

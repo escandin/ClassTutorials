@@ -1,0 +1,189 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 5: Unsupervised classification'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 26 2022
+
+## Goal
+To learn how to perform a spatial supervised classification and how to interpret the results.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab we will implement a workflow to perform unsupervised classification using the k-means method.
+
+The input dataset corresponds to a raster stack with two bands representing water dynamics in a wetland complex in the Colombian Caribean region between 1999 and 2019. The first raster band represents the mean proportion of the year in which a given pixel was covered by water in the time period. The second band represents the standard deviation. Data were processed from the global surface water dynamics product available here: https://glad.umd.edu/dataset/global-surface-water-dynamics
+
+Here is the publication: https://www.sciencedirect.com/science/article/pii/S0034425720301620 
+
+Have fun!
+
+#### System setup
+Define working directory and load required libraries. Install libraries as needed. Define folder to save temporary files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week5")
+setwd(wd)
+dir()
+
+library(terra)
+library(sf)
+
+dir.create('tempfiledir')
+tempdir=paste(getwd(),'tempfiledir', sep="/")
+terraOptions(tempdir="tempdir", progress=5)
+```
+
+#### Import raster dataset and plot it to make a first assessment.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+waterdyn<- rast("aguavarMarialaBaja.tif")
+plotRGB(waterdyn, r=1, g=2, b=1)
+ext=draw("extent")
+zoom(waterdyn, e=ext, maxcell=100000, layer=1, new=FALSE)
+click(waterdyn, n=10, cell=TRUE)
+```
+
+#### Remove background pixels
+You can see that there are some cell values equal to zero. In this case, the value has a meaning because those are areas not covered with water in any single period over the year. However, we have to remove those pixels from the analysis because they will be considered as a class in the analysis and therefore it can introduce noise and slow down the process. Let's convert any pixels with values of zero to NAs so that they are ignored from the analysis. Then plot again 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+waterdyn[[1]][waterdyn[[1]]==0]=NA
+waterdyn[[2]][waterdyn[[2]]==0]=NA
+zoom(waterdyn, e=ext, maxcell=100000, layer=1, new=FALSE)
+click(waterdyn, n=10, cell=TRUE)
+```
+
+#### Convert raster into a data frame and prepare the data
+Now that we successfully converted background pixels into NAs, let's convert the raster into a data frame:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+df=as.data.frame(waterdyn)
+```
+
+K-means tends to create oblong objects and so it is not very good at handling data that comes at different scales. Therefore it is strongly adviced to re-scale all data.
+
+A common method to rescale the data is by transforming them into zscores. From basic statstics, a zscore represents how many standard deviations a single value is away from the mean. Therefore a zscore has a mean of zero and a standard deviation of one.
+
+We will create a function that converts values of a vector into zscores. It is a good practice to write functions at the beginning of the code.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+zscore=function(x){
+  zval=(x-mean(x))/sd(x)
+  return(zval)
+}
+```
+
+Then apply the function to all bands in the dataset.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+for(xval in 1:ncol(df)){
+    df[,xval]=zscore(df[,xval])
+  }
+```
+
+Let's remove any remaining entries with missing values
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+df=subset(df,complete.cases(df))
+```
+
+#### Run the k-means analysis using the k-means function
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clusters <- kmeans(df, centers=5, iter.max=50, nstart=5, algorithm="Lloyd")
+```
+
+The object clusters corresponds to a list storing different types of information. For now, we are concerned about the object storing the cluster number assigned to all pixels analyzed: 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+head(clusters$cluster)
+tail(clusters$cluster)
+```
+
+#### Rasterize results and save files into disc.
+Let's create a raster with the values of pixels belonging to each cluster. For that purpose, we will first, obtain the coordinates of the analyzed pixels.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+coord=terra::xyFromCell(waterdyn,(as.numeric(rownames(df))))
+coord=data.frame(coord)
+names(coord)=c("x", "y")
+```
+
+Then create a copy of one of the layers of the original raster.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clustrast=waterdyn[[1]]
+```
+
+We will use these coordinates to identify the cell number of analyzed pixels and then replace the value of those cells in original raster for the cluster number that was assigned to them in the k-mean analysis:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+xypoints=st_as_sf(coord, coords=c("x", "y"), crs=st_crs("EPSG:32618"))
+xypoints=vect(xypoints)
+cellval=cells(clustrast, xypoints)
+clustrast[cellval[,2]]=clusters$cluster
+plot(clustrast)
+```
+
+Let's save the final raster and the results of the cluster analysis as a list. Let's also save the final classified raster as a tif file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clustlist=list(clustrast, clusters)
+save(clustlist, file='cluster_Lloyd.RData')
+writeRaster(clustrast, 'cluster_Lloyd.tif')
+```
+
+#### Bonus: Include coordinates as variables in the cluster
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+df$x=coord[,1]
+df$y=coord[,2]
+
+for(xval in (ncol(df)-1):ncol(df)){
+    df[,xval]=zscore(df[,xval])
+  }
+clustersGeo <- kmeans(df, centers=5, iter.max=50, nstart=5, algorithm="Lloyd")
+clustrastGeo=waterdyn[[1]]
+clustrastGeo[cellval[,2]]=clustersGeo$cluster
+clustlistGeo=list(clustrast, clustersGeo)
+save(clustlistGeo, file='clusterGeo_Lloyd.RData')
+writeRaster(clustrastGeo, 'clusterGeo_Lloyd.tif')
+```
+
+#### Interpret clustering results
+Let's open both clustering results in QGIS. We will see how to overlay the results with a high resolution image downloaded from google earth. Let's retrieve the centroids of the clusters and use them to interpret the classified map
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clusters$cluster
+clustersGeo$cluster # for bonus
+```
+
+## Lab instructions (due on Sep 26)
+
+1. Select three variables that you believe, will likely have the strongest influece on the variable that you want to predict in your final project. Briefly describe the rationalle for the selection of the variables.
+
+2. Run a k-means analysis, save the raster into the disc and map the results in QGIS. Interpret the mapping results based on your understanding of the phenomenon that you want to predict and the values of the centroids obtained in the k-means analysis.
+
+3. Upload to canvas: 
+a. The answers to points 1 and 2
+b. A screenshot of the classified map, with unique values for each class and another screenshot for the same area displaying a high resolution image from google earth 
+c.  the values of the centroids obtained with your analysis for the outputs that you selected as the best (with or without map coordinates).
+
+
+
+

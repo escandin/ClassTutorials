@@ -1,0 +1,189 @@
+---
+title: 'Remote Sensing Lab 2: Satellite data exploration and visualization
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+## Lab due
+September 09 2021
+
+## Goal
+1.	To learn how to search and download satellite data from different satellites using the Earth Explorer archive.
+2. To learn how to import, visualize and explore satellite data using basic raster functions in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class2/LabMaterialsNTest"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+fig4path=paste(wd, "Fig4.png", sep="/")
+fig5path=paste(wd, "Fig5.png", sep="/")
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+fig4 = readPNG(fig4path)
+fig5 = readPNG(fig5path)
+```
+
+## Part A. Downloading images
+1.	Go to Earth explorer (http://earthexplorer.usgs.gov). Click on the login link and enter the credentials that you used in class to open an account. If you haven’t opened an account click on the register link and follow the instructions. Please remember the credentials you used because you will need them frequently to login througout the course of the semester.
+2.	Earth explorer has two main panels. The panel on the left is the search panel and the one on the right is a map to visualize the regions of interest and the footprint of the images available. The search panel has four main tabs on the top: Search Criteria, Data Sets, Additional Criteria, and Results. 
+3.	Click on the “Search Criteria” tab. This tab gives the option to select the data to download by location and date ranges. You can search either by 1) typing an address/place, the path and row of a satellite image of interest (we will cover this in class) or a feature, or 2) coordinates. In our case we will enter an address but you should spend time exploring the other options.
+4.	Type “Phyladelphia” as the "feature name" and "Pennsylvania" as the State. Then click on "Show". Click on the suggested address/place This will add a pin to the map view in the selected location and will display the coordinates of the location in the left hand side.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Scroll down on the left panel and enter 06/01/2021 and 09/01/2021 as the date range.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig2path)
+```
+
+5.	Click on the “Data Sets” tab at the top of the search panel. Then on the drop down menu select Landsat/Landsat Collection 2 Level-1/Landsat 8 OLI/TIRS C2 Level-1.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig3path)
+```
+
+6. Click on additional criteria and select land cloud cover. Enter a range of 0 and 10 (expressed in percentage).
+
+7. Click on the results tab and locate the Landsat image specified below. You can constrain the search for a given date range by going to the “Search Criteria” tab, scrolling down to the bottom and entering any dates of interest. Select the Landsat 8 image acquired on June 23 2021 (grayed image in the image below:
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig4path)
+```
+
+8.	Browse the buttons that appear at the bottom of the entity.
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig5path)
+```
+
+Read their names and click on each one of them so that you become familiar with their functionality. Pay particular attention to the information that appears when you click in the "Show Metadata and Browse" button. 
+
+Click on the “Download Options”button. In the new window, select the first option on the top ("Landsat Collection 2 Level-1 Product Bundle"). The image should download as a compressed file with a .tar.gz extension in the default downloads folder in your computer. Make sure your browser does is not blocking pop-up windows. After the download is completed move the compressed file into the working folder that you specified as setwd() in R above. Please save this image. You will need it for the next lab!
+
+## Part B. Data importing, visualization and exploration
+Load required libraries.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+1. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class2/LabMaterialsNTest"
+setwd(wd)
+```
+
+2. Check the names of the files in your working directory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+```
+
+3. Copy the name of the compressed file and paste it in untar to decompress the file. Then read the metadata to open and stack all the bands in R.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#opts_knit$set(root.dir = wd)
+untar("LC08_L1TP_014032_20210623_20210630_02_T1.tar.gz")
+meta=readMeta("LC08_L1TP_014032_20170612_20170628_01_T1_MTL.txt")
+L8=stackMeta(meta)
+L8 # Provides the spatial information associated with the downloaded image.
+```
+
+4. Explore the downloaded image to retrieve spatial information
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+crs(L8) # shows the spatial projection of the landsat image
+extent(L8) # shows the coordinates of the geographic corners of the image
+nlayers(L8) # shows the number of layers
+crs(L8) # shows the reference system
+xres(L8) # shows the spatial resolution in the x axis
+yres(L8) # shows the spatial resolution in the y axis
+res(L8) # shows the spatial resolution in the x,y axis
+ncell(L8) # shows the number of pixels in the image
+dim(L8) # rows, columns, bands
+```
+
+5. Explore the help menu of the plotRGB function paying attention to the different arguments. Then plot an RGB map for the entire image with a linear stretching. 
+
+Use the drawExtent() function to select two diagonal corners in the RGB image containing the city of Philaldephia. Use the crop function to resize the image to the area of interest and plot it as an RGB composite with no stretching
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+?ggRGB # displays the help menu for the ggRGB function in the lower right panel of RStudio.
+# Without stretch
+ggRGB(L8, r = 5, g = 4, b = 3, stretch = "none")
+# histogram stretch
+ggRGB(L8, r = 5, g = 4, b = 3, stretch = "hist")
+# linear stretch
+ggRGB(L8, r = 5, g = 4, b = 3, stretch = "lin")
+
+e=drawExtent()
+L8rsz=crop(L8,e)
+ggRGB(L8rsz, r = 5, g = 4, b = 3, stretch = "lin")
+```
+
+6. Plot histograms for some bands
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hist(L8rsz[[3]],cex=3)
+hist(L8rsz[[4]],cex=3)
+hist(L8rsz[[5]],cex=3)
+hist(L8rsz[[6]],cex=3)
+```
+
+7. Save the resized image as a pdf with your Last, first initial and lab number
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("VGutierrez_Lab2.pdf")
+  ggRGB(L8rsz, r = 5, g = 4, b = 3, stretch = "none")
+  ggRGB(L8rsz, r = 5, g = 4, b = 3, stretch = "hist")
+  ggRGB(L8rsz, r = 5, g = 4, b = 3, stretch = "lin")
+dev.off()
+```
+
+## Lab deliverables
+
+1.Go to Earth Explorer and select a new location: Type the name of your home town, use the same date range as before (06/01/2021 and 09/01/2021) and cloud cover less than 10%. Select the image that looks best to you (that means not too many clouds, clear view) (0.5pts)
+
+What is the name of your home town? ______________________________________
+
+Paste the name of the image (e.g. LC08_L1TP_016028_20190718_20190731_01_T1): ______________________
+
+2. Click on the “Show Metadata and Browse” button (see step A8) and answer the following questions. (0.5 pts).
+
+What are the path and the row of the landsat image? _______, ________ 
+
+What is the total cloud cover in the scene (in percentage)? ___________ 
+
+What is the image quality? ________ 
+
+3. Use the code in Part B, steps 1-4 and to answer the questions below (0.5 pts)
+
+What is the number of columns______ rows______ and bands _______ for your resized image.
+
+What is the extent? xmin ______, xmax ______, ymin ______, ymax ______.
+
+4. Adapt the code written in step B5 to crop the image to the extent of the biggest urban area that you can find and use the plotRGB() function to produce a plot with bands 6, 5, and 4 and the argument stretch=NULL. Produce other two plots with the argument stretch="hist" and stretch ="lin". Make sure that your polygon does not include any black background pixels in the edges of the image. Do not modify anything else including parenthesis or quotation marks, otherwise the code will not run.
+
+What kind of stretch offers the best contrast to identify different features in the image? (0.5 pts) _______________
+
+5. Produce a single pdf file with the three plotRGB maps representing the three stretch settings in the order described above and upload it in canvas with your first initial, last name and lab number (see notation in step B7). In order to plot the three images in the same pdf file, write the three plotRGB functions together between the pdf() funtion and the dev.off() function (2 pts). 
+
+6. Copy these instructions for deliverables, paste them in a word document and respond to the questions. Submit the document along with the PDF generated in point 5 to Canvas (Upload lab 2 here).

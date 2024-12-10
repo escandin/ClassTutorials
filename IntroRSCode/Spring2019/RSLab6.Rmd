@@ -1,0 +1,270 @@
+---
+title: 'Remote Sensing Lab 6: Image transformation and spectral indices
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class6/Lab6Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+March 13 2019
+
+OJO: CREATE A FUNCTION TO RUN THE GRAPHS AND ONLY ASK THEM TO EVALUTE
+THE COMPARISON IN ONE OF THEM (MAYBE TASSELED CAP)
+
+## Goals
+1. To learn the calculation and implementation of different image transformations and spectral indices.
+2. To understand their interpretation and applicatio for land cover discrimination.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+1. Go to earthexplorer.usgs.gov. Enter “Pucallpa” as the place in the search criteria. In datasets select Landsat > Landsat Collection-1 Level-1 > Landsat 8 OLI/TIRS C1 Level-1.
+
+2. In results, select Landsat as the dataset and download image corresponding to path 06, row  066 from August 04-2016.  Download the GEOTIFF data product.
+
+3. Open R Studio, open a new R script and change the route to your working directory in the script using the function setwd().
+
+4. Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+5.	Answer the questions in the answer sheet and submit it along with the required pdf file to canvas.
+
+Have fun!
+
+1. Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+
+2. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class6/Lab6Materials"
+#dir.create(wd)
+setwd(wd)
+```
+
+3. Decompress, open and stack landsat image
+```{r include = TRUE, message=F, warning=F}
+dir()
+
+L8name="LC08_L1TP_006066_20160804_20170322_01_T1"
+
+# Decompress and stack landsat image
+untar(paste(L8name, "tar", sep="."))
+
+meta=readMeta(paste(paste(L8name, "MTL", sep="_"), "txt", sep="."))
+L8=stackMeta(paste(paste(L8name, "MTL", sep="_"), "txt", sep="."))
+L8
+plotRGB(L8, r=5, g=4, b=3, stretch="lin")
+```
+
+4. Use the drawExtent() function to create an extent that includes approximately the area shown in the plot below. Use that extent to crop the Landsat scene.
+```{r include = TRUE, message=F, warning=F}
+#e=drawExtent()
+e=extent(513128.8, 599389.9 , -1001877, -894184.4)
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+
+# Remove objects to release memory
+rm(L8)
+```
+
+6. Convert pixel values from digital numbers to ground reflectance
+```{r include = TRUE, message=F, warning=F}
+haze=estimateHaze(L8rsz, hazeBands=1:5, 
+                  darkProp=0.001, plot=TRUE)
+
+L8dos=radCor(L8rsz, metaData=meta, 
+             method="sdos", hazeValues=haze, hazeBands=1:5)
+
+L8subset=L8dos[[2:7]]
+rm(L8dos)
+rm(L8rsz)
+```
+
+7. Calculate and plot band transformations and spectral indices
+```{r include = TRUE, message=F, warning=F}
+L8PCA=rasterPCA(L8subset, nComp=nlayers(L8subset)) # Principal components analysis
+
+# Plot each band at a time
+plot(L8PCA$map[[1]], col = gray.colors(100, start = 0.1, end = 0.9, gamma = 2.2, alpha = NULL), axes=FALSE)
+
+plotRGB(L8PCA$map, r=1, g=2, b=3, stretch="lin")
+plotRGB(L8PCA$map, r=4, g=5, b=6, stretch="lin")
+
+L8indices=spectralIndices(L8subset, blue=1, green=2,
+                          red=3, nir=4, swir2=5, swir3=6,
+                          indices=c("NDVI",  "NDWI", "NBRI")) # Spectral indices
+plotRGB(L8indices, r=1, g=2, b=3, stretch="lin")
+
+L8tascap=tasseledCap(L8subset, sat="Landsat8OLI") # Tasseled cap
+plotRGB(L8tascap, r=1, g=2, b=3, stretch="lin")
+
+L8allbands=stack(L8subset, L8indices, L8tascap)
+rm(L8subset, L8indices, L8tascap, L8PCA, haze)
+```
+
+8. Draw different extents and collect the spectral information of a pixel that best typifies the land covers referenced below
+
+```{r include = TRUE, message=F, warning=F}
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# urbanext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=urbanext)
+# urban=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# forext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=forext)
+# forest=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# lakext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=lakext)
+# lake=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# rivext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=rivext)
+# river=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# grassext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=grassext)
+# grass=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# burnext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=burnext)
+# burnt=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# sandext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=sandext)
+# sand=click(L8allbands, n=1, cell=TRUE)
+# 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin")
+# oilext=drawExtent() # draw a different extent for each land cover type
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=oilext)
+# oilpalm=click(L8allbands, n=1, cell=TRUE)
+# 
+# landcovers=data.frame(rbind(urban, forest, lake, river,
+#                             grass, burnt, sand, oilpalm))
+# 
+# rm(urban, forest, lake, river, grass, burnt, sand, oilpalm)
+# landcovers=as.data.frame(t(as.matrix(landcovers)))
+# landcovers=landcovers[2:nrow(landcovers),]
+# 
+# names(landcovers)=c('urban', 'forest', 'lake', 'river',
+#                     'grass', 'burnt', 'sand', 'oilpalm')
+# 
+# colors=c('red', 'green','blue', 'gray', 'yellow', 'black', 'purple', 'orange')
+# 
+# graphics.off() # removes all plots from the environment
+```
+
+9. Create an aggregated pdf file with 
+a) RGB pixel maps representing  the zoomed in insets used to collect pixel values per land covers and 
+b) three line plots representing pixel values per land cover along different bands using ground reflectance, spectral indices, and a tasseled cap transformation.
+```{r include = TRUE, message=F, warning=F}
+#pdf("LCplot.pdf")
+######### PLOT EXTENTS USED FOR COLLECTING PIXEL VALUES
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin",ext=urbanext, axes=TRUE, main="Urban")
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=forext, axes=TRUE, main="Forest") 
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=lakext, axes=TRUE, main="Lake")
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=rivext, axes=TRUE, main="River")
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=grassext, axes=TRUE, main="Grass")
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=burnext, axes=TRUE, main="Burned")
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=sandext, axes=TRUE, main="Sand")
+# plotRGB(L8allbands, r=10, g=11, b=12, stretch="lin", ext=oilext, axes=TRUE, main="Oil palm")
+
+######### PLOT SPECTRAL RESPONSES GRAPHS
+# Names of the labels to add to the x axis in the plot
+# labnames=c("B2", "B3", "B4", "B5", "B6", "B7", 
+#                     "NDVI","NDWI", "NBRI", 
+#                     "bright", "green", "wet")
+# 
+# # PLOT REFLECTANCE BANDS
+# minband=1 # minimum band to plot
+# maxband=6 # maximum band to plot
+# 
+# # Add extra space to right of plot area; change clipping to figure
+# par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+# plot(landcovers[minband:maxband, 1], type="l", col="red",
+#      ylab="pixel value", xlab="band", 
+#      ylim=c(min(landcovers[minband:maxband,]),
+#      max(landcovers[minband:maxband,])), xaxt="n", 
+#      main="Band reflectance per land cover")
+# lines(landcovers[minband:maxband, 2], type="l", col="green")
+# lines(landcovers[minband:maxband, 3], type="l", col="blue")
+# lines(landcovers[minband:maxband, 4], type="l", col="pink")
+# lines(landcovers[minband:maxband, 5], type="l", col="yellow")
+# lines(landcovers[minband:maxband, 6], type="l", col="gray")
+# lines(landcovers[minband:maxband, 7], type="l", col="orange")
+# lines(landcovers[minband:maxband, 8], type="l", col="black")
+# lines(landcovers[minband:maxband, 9], type="l", col="purple")
+
+# legend("topright", inset=c(-0.3, 0), legend=names(landcovers),
+#        col=c("red", "green", "blue", "pink", "yellow",
+#              "gray", "orange", "black", "purple"), lty=1, cex=0.8)
+# dev.off()
+```
+
+## Lab 6 deliverables
+
+1. Respond the questions below based on the colors of different land covers after applying the tasseledCap() function (0.6): 
+a. What land cover results in the redest colors?  ___________________________ why? ___________________________________________________________________
+
+b. What land cover results in the bluest colors?  ____________________________
+why? __________________________________________________________________
+
+c. What land cover results in the greenest color (you might have to plot this band as a grey scale to identify the brightest pixels)?  _________________________________
+why? __________________________________________________
+
+
+Check the plots representing pixel values per different land covers for different bands that appear in your pdf file and answer the questions below:
+
+2. If you had to select one band in each of the plots representing pixel values per land cover (0.6):
+a. provide the name of the band that would provide the best discrimination between land covers in each plot
+* band reflectance per land cover: ________________
+* vegetation index value per land cover ________________
+* Tasseled cap value per land cover _________________
+
+b. provide the name of the band that would provide the worst discrimination between land covers?
+* band reflectance per land cover: ________________
+* vegetation index value per land cover ________________
+* Tasseled cap value per land cover _________________
+
+3. What two land covers do you expect to have the best discrimination in each plot type (0.3)?
+* band reflectance per land cover: ________________
+* vegetation index value per land cover ________________
+* Tasseled cap value per land cover _________________
+
+4. What two land covers do you expect to have the worst discrimination in each plot type (0.3)?
+* band reflectance per land cover: ________________
+* vegetation index value per land cover ________________
+* Tasseled cap value per land cover _________________
+
+5. Briefly explain your rationale to your answers in 2 to 4 above (0.2): _________________________________________
+
+To upload in canvas:
+1.	All the figures generated in one single pdf file (2 pt)
+2.	This document with your answers to the questions above (2 pt).

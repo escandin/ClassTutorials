@@ -1,0 +1,180 @@
+---
+title: 'Advanced Remote Sensing Lab 3: Spatial segmentation, object-based analyses, and contextual metrics'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+### Lab due
+Febraury 16 2021
+
+### Goal
+1. To become familiar with textural analysis and image segmentation using the superpixels implementation in R.
+2. To learn how to combine segmentation with pixel-bawesd classification to optimize classificatio results
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="//Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session4_SegmentationTextural"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+#fig1path=paste(wd, "SelEdit.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab instructions
+
+### 1. Environment setup and data loading
+We will use a NAIP image (https://www.usgs.gov/centers/eros/science/usgs-eros-archive-aerial-photography-national-agriculture-imagery-program-naip?qt-science_center_objects=0#qt-science_center_objects) acquired on October 2019 near Mansfield, OH. You can download it from here: https://drive.google.com/file/d/15qXV3z6KBjRoCR-aABr1zrchPYi1ojiS/view?usp=sharing
+
+Save downloaded image in a folder that you will use as a working directory. 
+
+Setup working directory and load required libraries. In my case I saved it here: "/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session4_SegmentationTextural".
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+setwd("/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session4_SegmentationTextural")
+library(raster)
+library(OpenImageR)
+library(randomForest)
+library(RStoolbox)
+library(dplyr)
+library(RColorBrewer)
+```
+
+Unzip, stack and plot image. Then crop it to a manageable size
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Minessota
+unzip("m_4309521_nw_15_1_20170920.zip")
+img=stack("m_4309521_nw_15_1_20170920.tif")
+
+# Ohio
+unzip("m_4008215_ne_17_060_20191009.zip")
+img=stack("m_4008215_ne_17_060_20191009.tif")
+
+##l8unmix=stack("unmixPCA.tif")
+plotRGB(img, r=3, g=2, b=1, stretch="lin")
+plotRGB(img, r=4, g=3, b=2, stretch="lin")
+e=drawExtent()
+img=crop(img, e)
+```
+
+#### 2. Image segmentation
+The package to be used for segmentation only recognizes images in JPEG format. Here we will convert the image from raster to JPEG format while conserving the original dimensionality.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nrows=img@nrows
+ncols=img@ncols
+jpeg("img.jpg", width = ncols, height = nrows)
+plotRGB(img, r=4, g=3, b=2, stretch="lin")
+dev.off()
+```
+
+We will use the super-pixels method. Modify the superpixel argument until you obtain satisfactory results. Larger values translate into more and smaller superpixels. You can learn more about the superpixels implementation here: https://infoscience.epfl.ch/record/177415 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rgb <- readImage("img.jpg")
+seg = superpixels(input_image =rgb, method = "slic", superpixel = 1000,
+                          compactness = 30, return_slic_data = TRUE, 
+                          return_labels = TRUE, write_slic = "", verbose = FALSE)
+imageShow(seg$slic_data)
+```
+
+#### 3. Feature extraction and classification
+We will try two methods. The first one is k-means
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Extract pixel values and remove any NA
+imgVal=getValues(img)
+i <- which(!is.na(imgVal))
+imgVal <- na.omit(imgVal)
+
+# perform a k-means classification
+E <- kmeans(imgVal, 12, iter.max = 100, nstart = 10)
+kmeans_raster <- raster(img)
+kmeans_raster[i] <- E$cluster
+```
+
+The second method combines k-means classification with unsupervised random forest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Perform a random forest classification with k-means
+sampval<-imgVal[sample(nrow(imgVal), 500),]
+rf_prox <- randomForest(sampval,ntree = 1000, proximity = TRUE)$proximity
+
+E_rf <- kmeans(rf_prox, 12, iter.max = 100, nstart = 10)
+rf <- randomForest(sampval,as.factor(E_rf$cluster),ntree = 500)
+rf_raster<- predict(img,rf)
+```
+
+Let's plot both results using an optimized random color palette
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# produce optimal colors to plot the map
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+colors=sample(col_vector, 12)
+
+# plot classifications with optimal colors and compare with the original image
+plot(kmeans_raster, col=colors)
+plot(rf_raster, col=colors)
+plotRGB(img, r=4, g=3, b=2, stretch="lin")
+```
+
+#### 4. Assign the majority class to all pixels in each segment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Explore the structure of objects based on the original blog
+str(img)
+str(rgb)
+str(seg)
+
+# sort the number of segments
+sort(unique(as.vector(seg$labels)))
+
+# Convert regions into raster
+regionsrast=raster(seg$labels, img[[4]])
+
+# Assign to each segment the majority class in the unsupervised classification
+rf_rasterVal=getValues(rf_raster)
+
+# obtain the majority value for each segment
+dataset=data.frame(cbind(rf_rasterVal, as.vector(t(seg$labels))))
+names(dataset)=c('category', "item")
+
+# Define a function to calculate majority per segment
+g <- function(number) {
+  ux <- unique(number)
+  ux[which.max(tabulate(match(number, ux)))]
+}
+
+# Apply function to all segments and plot them
+modes_by_cat <- summarise(group_by(dataset, item), group_mode = g(category))
+out=inner_join(dataset, modes_by_cat)
+val=out$group_mode
+segclass=setValues(img[[1]], val)
+#testrast=setValues(imgCrop[[1]], testval)
+plot(segclass, col=colors)
+```
+
+#### Homework
+
+Download the image for your homework form here: https://drive.google.com/file/d/1XSgrjKfWzv0lCh0_VbuV58wHq6DbFoh-/view?usp=sharing 
+
+Then adapt the code presented in the lab to segment the image and produce an object based classification. Feel free to subset the image to any area of interest (between 1/3 and 1/4th of the total area of the image). Please work with different values for the arguments of the superpixels function related to compactness and superpixels and select the one that works best for the segmentation.
+
+You can implement either the k-means or the hybrid k-means/random forest algorithm for the pixel-based classification. Fill up this form with the requested information: https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUM05HMUZWNVhGTkJTWEFUQVdKTk40UUpXSi4u  
+
+
+#### Sources
+Here are some online sources consulted for developing this lab code:
+https://www.r-bloggers.com/2020/03/analyzing-remote-sensing-data-using-image-segmentation/
+http://remote-sensing.org/unsupervised-classification-with-r/ 
+https://stackoverflow.com/questions/3823211/convert-a-matrix-to-a-1-dimensional-array

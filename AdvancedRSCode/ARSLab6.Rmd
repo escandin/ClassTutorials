@@ -1,0 +1,188 @@
+---
+title: 'Advanced Remote Sensing Lab 6: Radar remote sensing'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session6_Radar"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+#fig3path=paste(wd, "Pins.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab due
+March 09 2021
+
+### Goals
+In this lab you will learn:
+1. How to download, visualize and interpret radar satellite information
+2. How to perform speckle reduction and image calibration.
+3. How to analyze and classify multi-temporal radar images.
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+### Lab instructions
+
+#### 1.	Image collection and visualization
+Launch Google Earth engine in your browser (preferably chrome): https://code.earthengine.google.com/
+
+Open and visualize the images corresponding to the ALOS-PALSAR mosaics for the years 2007, 2010, and 2017. (https://developers.google.com/earth-engine/datasets/catalog/JAXA_ALOS_PALSAR_YEARLY_SAR)
+```{JavaScript}
+// Load data from the PALSAR satellite mosaics for three years
+var palsar17 = ee.Image("JAXA/ALOS/PALSAR/YEARLY/SAR/2017")
+var palsar10 = ee.Image("JAXA/ALOS/PALSAR/YEARLY/SAR/2010")
+var palsar07 = ee.Image("JAXA/ALOS/PALSAR/YEARLY/SAR/2007")
+Map.setCenter(-76.65, 5.69, 13);
+```
+
+The coordinates are located in the city of Quibdó. It is the capital of the Chocó Department in Colombia, which is designated by some as the rainiest (and therefore cloudiest) location in the world.
+
+Produce a polygon representing a study area of interest representing approximately the watershed of the Quito River. You can activate the satellite button to improve visualization. Name the polygon "StudyArea" (see lab 5 instructions). Then clip the images to the extent of the study area. Print one of the images and explore its contents.
+```{JavaScript}
+// Clip mosaics to the study area of interest
+var palsar17_SA= palsar17.clip(StudyArea)
+var palsar10_SA= palsar10.clip(StudyArea)
+var palsar07_SA= palsar07.clip(StudyArea)
+print(palsar07_SA, 'palsar 07');
+```
+
+Visualize the HV and HH bands for the three years.
+```{JavaScript}
+Map.addLayer(palsar17_SA,
+{bands: ['HV', 'HH', 'HV'], min: 1200, max: 6000, gamma: 2}, 'palsar17', 0);
+
+Map.addLayer(palsar10_SA,
+{bands: ['HV', 'HH', 'HV'], min: 1200, max: 6000, gamma: 2}, 'palsar10', 0);
+
+Map.addLayer(palsar07_SA,
+{bands: ['HV', 'HH', 'HV'], min: 1200, max: 6000, gamma: 2}, 'palsar07', 0);
+
+Map.centerObject(StudyArea, 11, 0);
+```
+
+#### 2.	Speckle reduction and image calibration
+```{JavaScript}
+var radius = 30;
+var palsar17_SA_filt = palsar17_SA.select('HH', 'HV').focal_mean(radius, 'circle', 'meters');
+var palsar10_SA_filt = palsar10_SA.select('HH', 'HV').focal_mean(radius, 'circle', 'meters');
+var palsar07_SA_filt = palsar07_SA.select('HH', 'HV').focal_mean(radius, 'circle', 'meters');
+```
+
+Convert images from DN to the backscatter coefficient or sigma naught (dB):𝛾0 =10log10〈𝐷𝑁2〉+𝐶𝐹
+CF= calibration factor =-83.0 
+```{JavaScript}
+var dB_palsar17_HH = palsar17_SA_filt.select('HH').pow(2).log10().multiply(10).add(-83.0);
+var dB_palsar17_HV = palsar17_SA_filt.select('HV').pow(2).log10().multiply(10).add(-83.0);
+var dB_palsar10_HH = palsar10_SA_filt.select('HH').pow(2).log10().multiply(10).add(-83.0);
+var dB_palsar10_HV = palsar10_SA_filt.select('HV').pow(2).log10().multiply(10).add(-83.0);
+var dB_palsar07_HH = palsar07_SA_filt.select('HH').pow(2).log10().multiply(10).add(-83.0);
+var dB_palsar07_HV = palsar07_SA_filt.select('HV').pow(2).log10().multiply(10).add(-83.0);
+```
+
+Visualize the corrected and normalized images combining data from a single year and from several years.
+```{JavaScript}
+Map.centerObject(StudyArea, 11, 1);
+Map.addLayer(dB_palsar17_HV.addBands(dB_palsar17_HH).addBands(dB_palsar17_HV),
+  {min:-20,max:0, gamma:2}, 'palsar17 HV HH HV', 0);
+Map.addLayer(dB_palsar10_HV.addBands(dB_palsar10_HH).addBands(dB_palsar10_HV),
+  {min:-20,max:0, gamma:2}, 'palsar10 HV HH HV', 0);
+Map.addLayer(dB_palsar07_HV.addBands(dB_palsar07_HH).addBands(dB_palsar07_HV),
+  {min:-20,max:0, gamma:2}, 'palsar07 HV HH HV', 0);
+  
+Map.addLayer(dB_palsar10_HV.addBands(dB_palsar17_HV).addBands(dB_palsar10_HV), {min:-20,max:0, gamma:2}, 'HV 10/17/10', 0);
+Map.addLayer(dB_palsar07_HH.addBands(dB_palsar17_HH).addBands(dB_palsar07_HH), {min:-20,max:0, gamma:2}, 'HV 07/17/07', 0);
+Map.addLayer(dB_palsar07_HV.addBands(dB_palsar10_HV).addBands(dB_palsar17_HV), {min:-20,max:0, gamma:2}, 'HV 07/10/17', 0);
+
+```
+
+#### 3.	Produce a change classification map
+Combine data from different years for classification.
+```{JavaScript}
+var HVs = dB_palsar07_HV.addBands(dB_palsar10_HV);
+var HVs= HVs.addBands(dB_palsar17_HV);
+print(HVs, "HVs")
+```
+
+Collect polygons representing diferent deforestation periods and no change. For that purpose zoom into an area of interest. Then click on the polygon button in the map window (blue circle # 1 below). Then draw a polygon in an area of interest representing deforestation for the first period. We will overview in class how to interpret radar RGB composites using data form different years to assess different periods of change. Collect at least five polygons. Then select click on the "+ new layer" button (blue circle 2 below) and collect at least 5 polygons representing deforestation for the second period. Select new layers to represent areas that did not change in the two periods (forest, water bodies, urban and other deforested areas). 
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Click on the wheel on front of each layer (circle 3 below). Then in "import as" select "geometry" and in "property" write "LCid" (Land Cover ID). Assign to each feature a consecutive number starting from zero (see figure below).
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Combine all the polygons in one single feature collection.
+
+```{JavaScript}
+var polygons = ee.FeatureCollection([loss0710, loss1017, gain1017, NoChgForest, NoChgRiver]);
+print(polygons,"polygons")
+```
+
+Retrieve backscatter information from the sampled polygons. Print and explore the resulting object.
+```{JavaScript}
+var training = HVs.sampleRegions({
+  // Get the sample from the polygons FeatureCollection.
+  collection: polygons,
+  // Keep this list of properties from the polygons.
+  properties: ['LCid'],
+  // Set the scale to get Landsat pixels in the polygons.
+  scale: 30,});
+print(training, "training")
+```
+
+Train a random forest classifier and explore the results.
+```{JavaScript}
+var classifier = ee.Classifier.randomForest(10)
+  .train(training, 'LCid');
+print(classifier, "classifier")
+
+```
+
+Use the trained algorithm to classify the multi-temporal image. Explore and visualize the resulting object.
+```{JavaScript}
+// Classify the input imagery.
+var classified = HVs.classify(classifier)
+print(classified, "classified")
+
+var Palette = ['9999ff', 'ffff99', '99ffff', 'ff99ff', 'd63000'];
+
+Map.addLayer(classified, {palette: Palette, min: 0, max: 4})
+```
+
+### Homework
+Follow the lab instructions to visualize multi-temporal bands from ALOS-PALSAR and to map deforestation associated with gold mining in Puerto Maldonado, Peru. You can use the code below as a reference location to draw a polygon defining your area of study.
+
+```{JavaScript}
+Map.setCenter(-70.55,-13, 13);
+```
+
+Select 4-5 ground features representing deforestation and features that didn't change. from the two periods of analysis represented by the ALOS-PALSAR image. Use that information to perform a supervised classification.
+
+Fill up this form for your report: https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUNEgyNDJGM1A1NkZFMVE2SktIQVc5NlRQMi4u 
+
+#### Source
+https://appliedsciences.nasa.gov/join-mission/training/english/arset-forest-mapping-and-monitoring-sar-data 

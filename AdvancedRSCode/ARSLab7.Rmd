@@ -1,0 +1,296 @@
+---
+title: 'Advanced Remote Sensing Lab 3: Lidar processing'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+### Lab due
+March 16 2021
+
+### Goals
+1. 
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="//Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session7_Lidar"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Sel2Edit.png", sep="/")
+fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab instructions
+
+For this lab, we are going to use the Lidar campaign collected by the city of Philadelphia in 2018.
+
+### 1. Load libraries and setup the environment.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+setwd("/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session7_Lidar")
+library("lidR")
+library("link2GI")
+library("mapview")
+library("raster")
+library("rgdal")
+library("rlas")
+library("sp")
+library("sf")
+library("gstat")
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+#BiocManager::install("EBImage")
+library("EBImage")
+```
+
+#### 1. Locate and download data
+
+Download tile index 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tilename="PhiladelphiaImagery_TileIndex2015.zip"
+download.file("ftp://ftp.pasda.psu.edu/pub/pasda/philacity/data/Imagery2015/PhiladelphiaImagery_TileIndex2015.zip", paste(getwd(), tilename, sep="/"), method="internal")
+unzip(tilename)
+```
+
+Open the tile index in QGIS and select the tile corresponding to an area of interest. To display a background map, you can go to the XYZ tile from the QGIS browser and click on any (the default one is OpenStreetMap). You can add another one (e.g. google imagery) by right clicking on XYZ tiles and selecting "New connection". Then you can enter the appropriate URL in the new window (e.g. https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z} - see image below). 
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Click on the identify features button and then on any tile of interest. Right click on the "Name" line and select "View feature form". It will display the name of the tile in another window. 
+
+Copy the name of the tile and enter it in the line corresponding to tilename below. For some reason the tiles for Lidar are named without the two zeroes at the end of the file so you will have to delete them. Then decompress the file.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tilename=#"26814E2628N" # Walnut lake golf course Wisahickon creek 2015
+"26838E2628N"
+tileid=paste(tilename, "zip", sep=".")
+download.file(paste("ftp://ftp.pasda.psu.edu/pub/pasda/phillyLiDAR/LAS2015", tileid, sep="/"), paste(getwd(),tileid, sep="/"), method="internal")
+unzip(tileid)
+```
+
+List available las files in working directory and open the one of interest. Then read the file and explore its contents. Then plot the file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+las_files = list.files('.', pattern='.las')
+
+lasfile = readLAS(las_files[2])
+
+las_check(lasfile)
+summary(lasfile)
+plot(lasfile)
+```
+
+Let's inspect the number of classes within the file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sort(unique(lasfile@data$Classification))
+```
+
+To understand the classes, go to this address: https://www.pasda.psu.edu/uci/DataSummary.aspx?dataset=1048 
+
+Then click on metadata: Categories: 0 Created Not Classified 1 Unclassified 2 Ground 3 Low vegetation 4 Vegetation 5 High vegetation 6 Building 7 Low point 8 Model keypoint 9 Water 10 Bridge 11 Trimmed 12 Overlap 13 
+
+It is possible to classify different classes
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(lasfile, color = "Classification")
+las_class <- filter_poi(lasfile, Classification == 12L)
+plot(las_class)
+```
+
+Produce a digital surface model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dsm <- grid_canopy(lasfile, res = 2, dsmtin())
+plot(dsm, col = height.colors(50))
+```
+
+Crop the dsm and also the las file to make it more manageable]
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+e=drawExtent()
+#e=extent(2684112, 2685128, 263033.4, 264151.2)
+#e=extent(2681784 , 2682728, 263658.2, 264515.2)
+dsm=crop(dsm, e)
+las_rsz=clip_roi(lasfile, e)
+plot(las_rsz)
+```
+
+Produce digital terrain model (DTM) and plot it
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#dtm1 = grid_terrain(lasfile, res = 2, algorithm = knnidw(k = 6L, p = 2))
+dtm2 = grid_terrain(las_rsz, res = 2, algorithm = tin())
+#dtm3 = grid_terrain(lasfile, res = 2, algorithm = kriging(k = 10L))
+plot_dtm3d(dtm2)
+```
+
+Normalize the image so that all ground points are centered on zero
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+lasnorm = normalize_height(las_rsz, tin())
+plot(lasnorm)
+```
+
+You can see that there are some outlier points. Let's filter them out.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+filter_noise = function(las, sensitivity)
+{
+  p95 <- grid_metrics(las, ~quantile(Z, probs = 0.95), 10)
+  las <- merge_spatial(las, p95, "p95")
+  las <- filter_poi(las, Z < p95*sensitivity)
+  las$p95 <- NULL
+  return(las)
+}
+
+las_denoised <- filter_noise(lasnorm, sensitivity = 1.2)
+```
+
+Produce a canopy height model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#chm1 = grid_canopy(lasnorm, 2, p2r())
+#chm2 = grid_canopy(lasnorm, 2, p2r(0.2))
+#chm3 = grid_canopy(lasnorm, 2, p2r(0.2))
+chm4 = grid_canopy(lasnorm, 2, dsmtin()) 
+#chm5 = grid_canopy(lasnorm, 2, pitfree(thresholds = c(0,2,5,10,15), max_edge = c(0,1)))
+chm6 = grid_canopy(lasnorm, 2, pitfree(c(0,10,30,60,90,120), c(0,1), subcircle = 0.2))
+#chm7 <- grid_canopy(lasnorm, 2, pitfree(c(0,10,30,60,90,120), c(3,1.5), subcircle = 0.2))
+plot(chm6, col = height.colors(50))
+plot_dtm3d(chm6)
+```
+
+Write DTM, DSM, and CHM as raster files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeRaster(dsm, "dsm.tif")
+writeRaster(chm4, "chm4.tif")
+writeRaster(dtm2, "dtm2.tif")
+```
+
+#### 2. Produce a tree segmentation
+
+Smooth the results using the package raster
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ker <- matrix(1,5,5)
+chm_s <- focal(chm6, w = ker, fun = median)
+```
+
+Segment trees using the watershed method (NOT WORKING)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+chm6img<- readImage("chm6.png")
+algo = watershed(chm6img, tolerance = 4)
+display(normalize(algo), title='Watershed')
+laseg  = segment_trees(lasnorm, algo)
+```
+
+Segment trees
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Using the Dalponte method
+ttops <- find_trees(lasnorm, lmf(4,2))
+laseg2=segment_trees(lasnorm, dalponte2016(chm6, ttops))
+trees = filter_poi(laseg2, !is.na(treeID))
+plot(trees, color = "treeID", colorPalette = pastel.colors(100))
+hulls  = delineate_crowns(laseg2, func = .stdmetrics)
+spplot(hulls, "ZTOP")
+
+# Using the Li method method
+laseg1=segment_trees(lasnorm, li2012(dt1 = 4))
+hulls  = delineate_crowns(laseg1, func = .stdmetrics)hulls2  = delineate_crowns(laseg2, func = .stdmetrics)
+spplot(hulls, "Z")
+plot(trees, color = "treeID", colorPalette = pastel.colors(100))
+
+
+
+
+
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+```
+
+
+
+
+
+Classify ground points
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+gp = classify_ground(lasfile, csf())
+plot(gp, color = "Classification")
+```
+
+Normalize the ground points
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+gpnorm = normalize_height(gp, tin())
+plot(gpnorm)
+```
+
+Compute a canopy height model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+algo = pitfree(thresholds = c(0,10,20,30,40,50), subcircle = 0.2)
+chmgp  = grid_canopy(gpnorm, 0.5, algo)
+plot(chm, col = height.colors(50))
+```
+
+Smooth the CHM using the raster package
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# smoothing post-process (e.g. two pass, 3x3 median convolution)
+ker = matrix(1,3,3)
+chm = focal(chmgp, w = ker, fun = median)
+chm = focal(chmgp, w = ker, fun = median)
+
+plot(chmgp, col = height.colors(50)) # check the image
+```
+
+Segment the trees
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+algo = watershed(chmgp, th = 4)
+laseg  = segment_trees(gpnorm, algo)
+
+# remove points that are not assigned to a tree
+trees = filter_poi(laseg, !is.na(treeID))
+
+plot(trees, color = "treeID", colorPalette = pastel.colors(100))
+```
+
+Compute metrics and hulls
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hulls  = delineate_crowns(laseg, func = .stdmetrics)
+spplot(hulls, "Z")
+
+```
+
+
+#### Homework
+
+Download the Philadelphia Aerial Photography 2018 - tile index from here:https://www.pasda.psu.edu/uci/DataSummary.aspx?dataset=2020
+
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+
+```
+
+NOTES: INSTALL the Qgis2threejs plugin for 3d rendering
+
+#### Sources:
+https://github.com/Jean-Romain/lidR/wiki
+http://quantitativeecology.org/using-rlidar-and-fusion-to-delineate-individual-trees-through-canopy-height-model-segmentation/ 
+https://ilias.uni-marburg.de/data/UNIMR/lm_data/lm_2092236/unit05/unit05-03_lidar.html
+
+Recommended: https://jean-romain.github.io/lidRbook/ 

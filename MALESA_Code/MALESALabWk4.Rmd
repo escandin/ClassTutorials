@@ -1,0 +1,234 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 4: Database development'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+# fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 24 2024
+
+## Goal
+At the end of this tutorial, students will be able to:
+
+-Produce a definition of a response variable and associated predictors
+
+-Represent such definition and associations spatially and tabularly
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+In this lab we will use the data downloaded and prepared in the previous lab to produce a database that represents the definition of the response variable and its possible relationship with predictors.
+
+Have fun!
+
+### 1. System setup
+Define working directory and load required libraries. Install libraries as needed.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week3_DataCollection")
+setwd(wd)
+library(terra)
+library(sf)
+library(tidycensus)
+```
+
+Import datasets from previous labs
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datastack=rast("datastack.tif")
+SpatData=vect(paste0(wd, "/DataPoints/DataPoints.shp"))
+plot(datastack[[8]])
+plot(SpatData, add=T)
+
+# make sure that the crs of the spatial data is the same as the one of the datastack
+crs(SpatData)==crs(datastack) # If FALSE, then project:
+SpatData=project(SpatData, datastack)
+```
+
+Define unit of analysis: In this case, the units of analysis will be each one of the census tracts located within the counties where sampled data were collected:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+name_counties <- unique(SpatData$COUNTY)
+
+variables_to_get <- c(
+    median_value = "B25077_001",
+    median_income = "B19013_001",
+    total_population = "B01003_001",
+    median_age = "B01002_001",
+    median_year_built = "B25037_001"
+)
+
+censusdata <- get_acs(
+  geography = "tract",
+  variables = variables_to_get,
+  state = "PA",
+  county = name_counties,
+  geometry = TRUE,
+  output = "wide",
+  year = 2015
+)
+names(censusdata)
+
+# convert census data to a terra object and make sure they have the same crs
+class(censusdata)
+censusdata=vect(censusdata)
+crs(censusdata)==crs(datastack)
+censusdata=project(censusdata, datastack)
+```
+
+### 2. Produce a database for location data
+
+#### Define the representation of reponse variable
+The variable that we are going to use to represent the response variable, corresponds to ADULTS, that contains the number of female adults of the mosquito that were collected in each sample.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+SpatData$response=rep(0, nrow(SpatData))
+SpatData$response[SpatData$ADULTS>0]=1
+```
+
+#### Define the study area
+We will define the study area as the census tracts that are located within the extent of the sampling data. We will use the polygons obtained for county income as the reference and then dissolve all polygons into one.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+studyArea=st_union(st_as_sf(censusdata))
+plot(studyArea)
+```
+
+#### OPTIONAL: Produce pseudo-absences for cases when only presence data is available
+For cases where the goal is to predict the occurrence of an event, it is often the case that only occurrence data is available (e.g. accidents, species presence). This data is insufficient for modeling purposes because absence data is also needed to represent null outcome (0).
+
+Even when data on absences is available, these data might be constrained by what is called imperfect detection. That means that there might be factors other than suitability that can explain a no-occurrence. There are approaches to reduce the effect of imperfect detection in prediction but they require that data on other variables that might influence a null outcome are considered. 
+
+When mitigating the effect of imperfect detecion is not possible, synthetic data representing no-ocurrence can be generated. We will produce these pseudo-data by sorting a random sample of points with a size equal to the number of points representing presences.
+
+For this example, we will only consider presence data in the response variable, assuming that this is better than using the absence data provided due to imperfect detection.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+SpatData=SpatData[SpatData$response==1,]
+```
+
+Then we are going to produce a random sample with the same number of points as the reference data.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# First, I will eliminate from the original dataset all observations equal to zero. THIS STEP IS NOT NECESSARY IF YOU DO NOT HAVE ABSENCE DATA IN YOUR DATASET
+#datasubset=datasubset[which(datasubset$ADULTS>0),]
+#SpatData=SpatData[which(SpatData$ADULTS>0),]
+samp=st_sample(studyArea, size=nrow(SpatData))
+
+# Plot the data to ensure that the procedure was succesfull
+plot(samp, cex=0.1)
+plot(SpatData, col="red", add=T)
+samp=vect(samp)
+
+# Check that the size of the random points is the same as the reference data
+nrow(samp)
+nrow(SpatData)
+```
+
+Then we are going to join the sampled pseudo-absence data with the presence data in the original database. For this purpose, we will need to ensure that both datasets to be joined have a dataframe with the same number and names of variables. Since I want to preserve all variables from the original dataset, I am going to produce a datframe for the pseudoabsences that has the same variables than the presence data, with null values for those variables.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Notce that the pseudoabsences has no data associated to the points
+head(SpatData)
+head(samp)
+
+# Create an empty dataframe for the sampled pseudo-absences
+values(samp)=data.frame(matrix(data=0, nrow=nrow(SpatData), ncol=ncol(SpatData)))
+# We need to assign zeroes to all entries instead of NAs in order to avoid R to abort the session.
+
+# Assign to the sampled data, the same names as the observed data
+names(SpatData)
+names(samp)=names(SpatData)
+
+# Append the sampled data to the presence data
+SpatData=rbind(SpatData, samp)
+```
+
+#### Extract data from reference and sampled datasets
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pointdata=extract(datastack, SpatData)
+
+# Add a column with the values for the response variable
+pointdata=cbind(pointdata, SpatData)
+
+nrow(pointdata)
+nrow(SpatData)
+head(pointdata)
+write.csv(pointdata, file="pointdata.csv")
+```
+
+### 3. Produce a database for area data
+If we are aiming to make a prediction at the area level instead of at the point level, we will express the variable as the number of presences per census tract as a function of descriptive metrics calculated for each one of the predictors. Let's extract the information into a database
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# You can use the function extract()
+meandata=extract(datastack, censusdata, fun=mean, na.rm=TRUE) #mean value for each layer per census tract
+sddata=extract(datastack, censusdata, fun=sd, na.rm=TRUE) #sd value for each layer per census tract
+
+# or you can also use the function zonal()
+meandata=zonal(datastack, censusdata, fun=mean, na.rm=TRUE) #mean value for each layer per census tract
+sddata=zonal(datastack, censusdata, fun=sd, na.rm=TRUE) #sd value for each layer per census tract
+
+names(meandata)= paste0(names(meandata), "_mean")
+names(sddata)= paste0(names(sddata), "_sd")
+
+# you can use also the function zonal() to eztraxt the number of presence responses per census tract
+counts <- zonal(SpatData[SpatData$response==1], censusdata, fun=length) 
+#countsrast <- zonal(SpatData[SpatData$response==1], censusdata, as.raster=TRUE,fun=length)
+
+# Produce a dataframe
+polydata=cbind(meandata, sddata)
+polydata$zone=1:nrow(polydata)
+polydata=merge(polydata, counts, by = "zone", all.x = TRUE, suffixes = c("", "_add"))
+polydata$response[is.na(polydata$response)]=0
+head(polydata)
+write.csv(polydata, "polydata.csv")
+```
+
+I recommend to rename the variables when the names are too long using the names() function
+
+You can use other functions to extract descriptive statistics for each area of interest by entering a statistic of interest in the fun argument, either in the extract() or zonal() functions. Those include:
+
+fun = mean
+
+fun = sd
+
+fun = min
+
+fun = max
+
+fun = median
+
+fun = sum
+
+fun = range
+
+You can also produce custom functions. Here are a couple of examples:
+
+Interquartile range (IQR): fun = function(x) IQR(x)
+
+Quantile: e.g., 25th percentile, 75th percentile: fun = function(x) quantile(x, probs = 0.25)
+
+
+## Lab deliverables
+Produce a database in .csv format with the values of the response variable and at least ten associated predictors (covariates) and upload it to module 4 in canvas.
+
+As a reminder, the link below directs towards a spreadsheet with information about data repositories and packages in R for spatial data downloading:
+https://tuprd-my.sharepoint.com/:x:/g/personal/tug61163_temple_edu/Eedslt7IVsJDuAwGHIyhVtkBVhw-6KV8SFZCHynaVxAI7A?e=vLg9rI

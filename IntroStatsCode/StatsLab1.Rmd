@@ -1,0 +1,298 @@
+---
+title: 'Spatial Analysis. Lab Week 1: Introduction to the R Environment'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "rstudio_session_4pane_layout.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Jan 25 2023
+
+## Goals
+
+-To become familiar with the environment and how to navigate it using R studio.
+-To learn the most essential R objects including vectors, data frames and functions
+-To learn how how to manipulate and make basic operations with objects in R
+-To learn how to load data and perform basic data manipulation in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+### Downloading and opening required software
+The installation instructions below are adapted from here (https://www.andrewheiss.com/blog/2012/04/17/install-r-rstudio-r-commander-windows-osx/)
+
+### In Windows
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Windows” > “base” > “Download R X.X.X for Windows” (latest version). You can also click on "Installation and other instructions for further details.
+2. Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop and install it. Leave all default settings in the installation options.
+
+### In Mac
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Mac OS X” > “R-X.X.X.pkg” (latest version).
+2.	Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop.
+4.	Install RStudio by double clicking on the downloaded file.
+5. Install xcode to execute the plot3D function. You can download it from here: https://developer.apple.com/xcode/ . You will need to restart your machine after installation.
+6. Install homebrew. Open terminal and paste the line of code that appears on top here: https://brew.sh
+7. Install the cartographic projections library by pasting and running the line of code that appears in the following link in your terminal: https://formulae.brew.sh/formula/proj
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+I strongly recommend this introductory R book: https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf 
+
+Have fun!
+
+### 1. The RStudio Environment
+R studio has four main panels.
+1. Code: This is where you write and save your scripts
+2. Console: Here is where you run the code and can visualize the outputs of operations.
+3. Environment: You can visualize here the objects loaded in R
+4. Files, plots, packages, help: Use it to explore folders, visualize plots, load libraries and document the execution of functions.
+
+You can read more about R studio here: https://datacarpentry.org/genomics-r-intro/00-introduction/index.html The image below was obtained from there:
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+### 2. R essentials
+You can write code directly in the console or run it using the code panel. To run code using the code panel, you can locate the cursor in the line of code that you want to run or select a chunk of code (shift+arrows) and then execute it by typing shift+enter
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+"hello world"
+```
+
+Or make basic operations
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+2+3
+```
+
+R operates with objects. For instance, instead of writing 2+3, you can do:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+a=2
+b=3
+c=a+b
+a
+b
+c
+```
+
+In this case, a, b, and c are objects (notice that they are loaded in the environment panel). You can re-use objects for further operations
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+c^(a/b)
+```
+
+Objects can be numeric or strings (text)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+d = "I love"
+e = "statistics"
+```
+
+In addition to numeric or character there are also logical values in R. You can know the types of values or vectors by using the function class()
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+class(a)
+class(d)
+a<b
+class(a<b)
+a==b
+```
+
+Notice that double == is different than a single = in R. A single equal is used to designate the values of an object while a double == is used to assess whether the values of two objects are equal or not and therefore produce a logical FALSE/TRUE result.
+
+There are other types of values that are considered as missing values or not a number (NaN). Any operation with these values return an (NaN)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+h=sqrt(-c)
+h
+a*h
+```
+
+There are also infinity numbers. Any number multiplied by infinity results into infinity, except for a NaN
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+i=1/0
+a*i
+h*i
+```
+
+### 3. Basic data object types in R
+An object is a structure that has a name and contains information. Below, I introduce three essential types of R objects: vectors, dataframes and functions.
+
+There are other types of objects in R that include matrices, arrays, factors and lists. I will introduce those later in the semester as needed.
+
+#### Vectors
+You can  store different elements in a data structure known as "vector". A vector is created using the function c
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+vec1=c(10, 5, 3, 9, 4)
+vec1
+vec2=c(a, b, c, a/b, b*c)
+vec2
+vec3=c(vec1, vec2)
+vec3
+```
+
+In fact a, b, and c are considered by R as a vector with only one element. You can know the number of elements in a vector by using the function length
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+length(a)
+length(vec1)
+```
+
+An operation between a number and a vector, returns an object that applies the value of the number to all the elements in the vector. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+a*vec1
+```
+
+An operation between vectors of different lengths results in repeating some of the elements in the shorter vector until the length matches the one of the longest vector
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+vec4=c(5,2,9)
+vec3+vec4
+```
+
+Vectors are indexed so you can select given elements from a vector for different purposes by typing the position of the elements of interest within the vectors in a bracket:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+vec1[c(1,3,5)]
+vec1>4
+vec1[vec1>4]
+vec1[vec1>4]=NA
+```
+
+Vectors are considered as a class on their own. Other classes in R are matrix, array, factor, data frame and lists. We will review these objects later in the semester as needed.
+
+#### Data frames
+Data frames are the most used type of structures for machine learning in R. They are typically used to store observations (arranged as rows) for different types of variables (arranged as columns). They are the equivalent of a spreadsheet in R. They can also be understood as a set of vectors or factors with the same length:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+LandCover=c("grassland","impervious", "forest", "forest", "water", "grassland", "bare soil", "impervious", "grassland")
+temperature=c(25, 32, 18, 21, 12, 27, 29, 33, 26)
+humidity=c(17, 6, 55, 67, 100, 22, 12, 8, 19)
+soildepth=c(20, 0, 70, 65, 0, 17, 12, 0, 19)
+ecodata=data.frame(LandCover, temperature, humidity, soildepth)
+class(ecodata)
+```
+
+You can also visualize a data frame in R studio as a spreadsheet by double clicking on its name in the environment panel (see figure above).
+
+#### Functions
+Functions are pre-coded computations applied to objects. For instance:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sqrt(a)
+f=sum(vec3)
+g=length(vec3)
+mean(vec3)
+f/g
+sd(vec3)
+sort(vec1)
+paste(d,e, sep=" ")
+```
+
+You can see the code behind each function by writing the name of the function:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sd
+```
+
+Functions are implemented through the use of arguments. Each function has its own arguments. Some of them are required and some of them are optional. You can learn how to implement a function by writing ? followed by the name of the function
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+?mean
+```
+
+Use the function rm() to remove objects from the environment. Check that removed objects disappear from the "Environment" panel
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(l)
+rm(list=ls()) # removes all objects from the environment
+```
+
+### 4. Setting the environment in R
+Before loading or saving objects, it is important to setup the working directory. By default, files are read and written in the working directory.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/Spring2023/Module1_Introduction"
+setwd(wd)
+```
+
+You can also setup the working directory by clicking in the RStudio menu: 
+Session > Set Working Directory > Choose Directory...
+
+Use the function dir() to visualize the files and folders in the working directory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+```
+
+### 5. Importing and becoming familiar with data in R
+
+5.1. Download the file from canvas named "states_data_2010Census_DP1.csv" to your working directory. Then load the file in canvas and explore it. Notice that you can double click on the object in the environment panel to visualize it as a spreadsheet in RStudio
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# load the object into R
+dataset=read.csv("states_data_2010Census_DP1.csv")
+# Notice that an object named "data" appears in the R environment
+
+names(dataset) # retrieves the name of the columns (variables) in the dataset
+head(dataset) # displays the first 5 observations for all columns in the database
+str(dataset) # Produces a description of the structure for each column
+```
+
+5.2. Explore the data. The file contains 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nrow(dataset) # number of data entries as rows
+ncol(dataset) # number of variables in the dataset as columns
+min(dataset$Total_pop) # minimum population across all states
+mean(dataset$Total_pop) # average population for all states
+max(dataset$Total_pop) # minimum population across all states
+```
+
+5.3. Create a new column and and calculate new variables based on a formula applied to other columns.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Population density (total population/area)
+dataset$popdens=dataset$Total_pop/dataset$Total_area
+
+# Maximum and minimum population densities across states
+max(dataset$popdens) 
+min(dataset$popdens) 
+
+# Row number associated with the state with the smallest population density
+which(dataset$popdens==max(dataset$popdens)) 
+
+#Name of the state with the maximum population density
+dataset$State_Name[dataset$popdens==max(dataset$popdens]
+
+#Name of the state with the minimum population density
+dataset$State_Name[dataset$popdens==min(dataset$popdens]
+```
+
+## Lab instructions
+
+Download to your working directory, the csv used as example for the lab tutorial. Then load the file into R as a data frame using the read.csv() function (step 5.1).
+
+Adapt the code in sections 5.2 and 5.3 to answer the questions below:
+
+1. Write a line of code to produce a new column that represents the proportion of hispanic or latino population with respect to the total population for all states.
+
+2. Write three lines of code to produce the mean, minimum, and maximum porportion of hispanic or latino population across states. 
+
+Report the mean, minimum, and maximum values obtained in that order.
+
+3.  Write a line of code that retrieves the name of the state with the largest proportion of hispanic or latino population.
+
+What is the name of that state?
+
+4.  Write a line of code that retrieves the name of the state with the smallest proportion of hispanic or latino population.
+
+What is the name of that state?
+
+## Lab deliverables (due on Sep 12)
+
+Copy the questions above and paste them in a word document. Then enter the code and the answers below each question. Save the file and upload it to Module 1 in canvas under the section: "Upload lab session 1: getting started with software".

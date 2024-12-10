@@ -1,0 +1,362 @@
+---
+title: 'Spatial Analysis. Lab Week 11: Correlation'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "r_Lab11.png", sep="/")
+fig2path=paste(wd, "R2V1_Lab11.png", sep="/")
+fig3path=paste(wd, "R2V2_Lab11.png", sep="/")
+fig4path=paste(wd, "SumSquaresGraph_Lab11.webp", sep="/")
+fig5path=paste(wd, "R2Adj_Lab11.png", sep="/")
+fig6path=paste(wd, "F_lab11.png", sep="/")
+fig7path=paste(wd, "t_lab11.png", sep="/")
+fig8path=paste(wd, "ci_lab11.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab due
+April 09 2023
+
+### Goal
+At the end of this lab, students will know:
+
+-How to visualize and represent mathematically different measures of correlation between two variables using R.
+
+-How to fit a regression line and interpret the results.
+
+### Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+### Reference data
+For this lab we will use data from the UN-HDI to predict healthy life expectation using linear modeling. 
+
+You can download the .csv file associated to these datasets from the module "Datasets" in canvas. Please read the description and access the links to become familiar with the characteristics of the datasets.
+
+### Procedure
+
+#### 0. Setup the environment
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module11_Correlation")
+setwd(wd)
+
+# This is an additional directory where I have the data stored
+datadir=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/Datasets")
+dir()
+```
+
+#### 1. Load variables of interest as a dataframe
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#1. import the data
+hdi=read.csv(paste0(datadir, "/UNHDI_2020_w_Happiness.csv"))
+
+#2. Extract variables of interest from the data
+response=hdi$Healthy.life.expectancy
+predictor=hdi$Internet.users..Total....of.population.
+
+head(response)
+summary(response)
+  
+head(predictor)
+summary(predictor)
+
+#3. Create a dataframe with the extracted variables
+datasubset=data.frame(cbind(response,predictor))
+  
+#4. Remove observations with missing data
+nrow(datasubset)
+datasubset=subset(datasubset, complete.cases(datasubset))
+summary(datasubset)
+nrow(datasubset)
+
+```
+
+#### 2. Visualize the correlation as a scatterplot
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(datasubset$response~datasubset$predictor, xlab="internet users", ylab="healthy life exp.")
+```
+
+#### 3. Produce a regression model and overlay the fitted line in the scatterplot.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mod=lm(datasubset$response~datasubset$predictor)
+abline(mod)
+```
+
+Notice that the scatterplot suggests a positive correlation (higher values of internet tend to be related to higher values in health expectancy). The upward trend represented by the fitline confirms this relationship.
+
+#### 4. Calculate the correlation coefficient
+
+The correlation coefficient can be expressed with the formula below:
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Manually
+r=sum((datasubset$predictor-mean(datasubset$predictor))*
+        (datasubset$response-mean(datasubset$response)))/
+  sqrt(sum((datasubset$predictor-mean(datasubset$predictor))^2)
+       *sum((datasubset$response-mean(datasubset$response))^2))
+
+# with a formula in R
+cor(datasubset$response, datasubset$predictor, method="pearson" )
+```
+
+Notice that the value of the correlation is positive. That means that the variable "internet users" is positively correlated with the variable "healthy life expectancy. This result agrees with the trend suggested by the scatterplot and represented by the fit line graphed before.
+
+#### 5. Regression parameters
+2.	The value of the parameters associated with the intercept and the slope can be obtained from the model summary in R. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(mod)
+```
+
+The intercept is equal to 53.816 and the slope associated to the predictor is 0.198. The equation can be written as:
+
+Therefore, the equation representing healthy life expectancy as a function of the proportion of internet users can be written as:
+
+healthy life expectancy= 53.816 + 0.198 x internet users
+
+#### 6. Producing predictions
+
+We can use this formula to predict different values for the response variable (healthy life expectancy). Let's calculate what would be the healthy life expectancy for a country with the %internet use of 80%? 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Manually:
+iuVal=80 
+
+hlePred=53.816+0.198*iuVal
+
+# Extracting the values of the parameters from the model results
+hlePred=mod$coefficients[[1]]+mod$coefficients[[2]]*iuVal
+```
+
+What would be the healthy life expectancy for a country with the %internet use of 30%?
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Manually:
+iuVal=30 
+
+hleVal=53.816+0.198*iuVal
+
+# Extracting the values of the parameters from the model results
+hleVal=mod$coefficients[[1]]+mod$coefficients[[2]]*iuVal
+```
+
+You can also use some algebra to estimate what is the value of the predictor that will result in a given value of interest for the response. For instance, what is the percentage of internet users that would be expected to result in a predicted healthy life expectancy of 60 years?
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Manually:
+hleVal=60
+
+iuVal= (hleVal-mod$coefficients[[1]])/mod$coefficients[[2]]
+```
+
+So the percentage of internet users that would result in a predicted healthy life expectancy of 60 years is equal to 30.
+
+How much change in healthy life expectancy can you see for an increase of 20 in %internet use?
+This value is defined by the slope. Since the slope is constant, we can do:
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+iuval=20
+delta_hle=mod$coefficients[[2]]*iuval
+```
+
+So for an increase of 20% in internet use, we should expect an increase in healthy life expectancy of 4 years
+
+#### 8. Coefficient of determination
+
+The coefficient of determination or R2 represents the percentage of the variance in the response variable that is explained by the model. For linear regression the R2 can be expressed as:
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Alternatively, R2 can be expressed as:
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+Graphically, the terms associated with the R2 can be visualized as (https://www.analyticsvidhya.com/blog/2021/05/the-game-of-increasing-r-squared-in-a-regression-model/):
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig4path)
+```
+
+Let's calculate the R-square manually, step by step.
+
+The total sum of squares (SST) represents the total variation in the response variable. It can be calculated in R as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sst=sum((mean(datasubset$response)-datasubset$response)^2, na.rm = TRUE)
+```
+
+The sum of squares of the residuals or the error (SSE) can be calculated as the total variation in the response variable explained by the model. It can be calculated in R as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Predict the values of the response based on the results of the linear model
+predicted=predict(mod)
+points(datasubset$predictor, predicted, col="blue")
+
+# Let's plot the predicted values, you can notice that all the points fall within the fitline
+sse=sum((datasubset$response-predicted)^2)
+```
+
+The sum of squares of the regression (SSR) represents the variations in the prediction of the response variable produced by the regression with respect to the mean of the response variable. It can be calculated in R as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ssr=sum((predicted-mean(datasubset$response))^2)
+```
+
+As explained before, the coefficient of determination provides an estiate of how much of the variance (i.e. what % of the total variance/error) is explained by the model relative to the total variance in the response variable. It can be calculated in R as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+R2=1-sse/sst # R squared
+
+# or alternatively
+R2=ssr/sst
+
+# Let's compare this value with the one obtained from the parameterized model
+summary(mod)
+```
+
+The obtained R2 means that the model explains 71.7% of the variation in the response variable (healthy life expectation).
+
+Notice that the value calculated for the coefficient of determination (R2) is equal to the square of the value calculated for the correlation coefficient (r):
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+R2
+r^2
+```
+
+Notice that the summary of the regression includes something called the "Adjusted R-squared". This value penalizes the R2 estimate based on the number of variables used for the model.
+
+The formula for the Adjusted R-squared is (https://www.analyticsvidhya.com/blog/2021/05/the-game-of-increasing-r-squared-in-a-regression-model/):
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig5path)
+```
+
+and can be calculated in R as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# adjusted R squared. From here: http://strata.uga.edu/8370/lecturenotes/regression.html
+R2adj=1-(1-R2)*(length(datasubset$response)-1)/(length(datasubset$response)-2)
+```
+
+#### 9. Analysis of Variance (ANOVA)
+
+One of the outputs of the regression model corresponds to the F-statistic and its respective p-value. These are the results of an ANOVA test that evaluates the level of significance of the R2 value obtained in the regression. The hypotheses for the ANOVA test in this case are:
+
+H0: R2 = 0
+HA: R2 != 0
+
+The formula for the calculation of the f statistic is:
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig6path)
+```
+
+We can use the formula to calculate the F value in R and then test the probabilty of obtaining an F value higher or equal to the one calculated if the null hypothesis was true.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+f=(R2/1)/((1-R2)/(length(datasubset$predictor)-2))
+
+# or alternatively:
+f=(ssr/1)/(sse/(length(datasubset$predictor)-2))
+pf(f,1,length(datasubset$predictor)-2, lower.tail=FALSE)
+```
+
+Notice that the value calculated for F is the same as the value reported in the model results. Also notice that the degrees of freedom are the same as the ones used in the formula above.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(mod)
+```
+
+The p-value for the F statistic is very low so the probability for the null hypothesis to be true is very low.
+
+#### 10. Significance of the slope parameter
+
+In addition to the F statistic, another important proof to evaluate the modeling results is the evaluation of the significance of the parameter estimate associated to the independent variable (or the slope). For this purpose we use a t-test. The null and alternative hypotheses can be expressed as:
+
+H0: slopex = 0
+HA: slopex != 0
+
+The t-statistic for the slope (beta1) can be calculated as: (https://www.geo.fu-berlin.de/en/v/soga/Basics-of-statistics/Hypothesis-Tests/Inferential-Methods-in-Regression-and-Correlation/Inferences-About-the-Slope/index.html#:~:text=The%20regression%20t%2DTest%20is,(linear)%20predictor%20of%20y):
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig7path)
+```
+
+where se corresponds to the standard error of the slope.
+
+The t-value can be calculated in R as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+se=sqrt(sse/(length(datasubset$response)-2))
+tval=mod$coefficients[[2]]/(se/sqrt(sum((datasubset$predictor-mean(datasubset$predictor))^2))
+```
+
+Then we can calculate the probability of obtaining a t-value equal or higher than the one calculated if the null hypothesis is true:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pt(tval,length(datasubset$response)-2, lower.tail=FALSE)*2
+```
+
+Since the value is very low, we can be very confident that the slope associated to the predictor is significantly different to zero.
+
+### Lab report
+Adapt the code provided above to use the variable "Gender.Inequality.Index" as the predictor. Then provide the information requested or answer the questions below. Upload the report in module 11 in canvas.
+
+1. Provide a graph representing the correlation between the predictor and the response as a scatterplot. Overlay to the scatterplot the fitted line obtained from a linear model (steps 0 through 3 above). Make sure to label the axes with the name of the variable used for the analysis.
+
+2. Implement a regression model in R and provide the values for the intercept and the slope reported in the regression summary.  Use the value of the parameters to write the equation representing healthy life expectancy as a function of the gender inequality index.
+
+3. Interpret the sign of the parameter associated with slope to produce a plausible hypothesis about a mechanism that could potentially explain how gender inequality could affect healthy life expectancy.
+
+4. Can you think of any mechanism that could potentially explain the correlation?
+
+5. Calculate the SST and SSE for this model. How do these values compare to the ones obtained for the model ran in class (using internet usage as the predictor)? How do you interpret the compared results?
+
+6. What is the adjusted correlation coefficient obtained with the regression? How do you interpret this value?
+
+7. Use the p-level obtained from the F test to interpret the significance of the model that you obtained.
+
+8. Use the p-level obtained from the t test associated to the predictor to interpret the significance of the parameter obtained for the slope parameter.
+
+Produce a third model representing healthy life expectancy as a function of the variable "Logged.GDP.per.capita". 
+
+GDP stands for Gross Domestic Product. It is a measure of the size of a national economy and is calculated as the monetary value of all goods and services produced within a country's boundaries https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Beginners:GDP_-_What_is_gross_domestic_product_(GDP)? . The term "per capita" means that the total GDP is divided by the total population to represent the average indicator per person. 
+
+Notice that the name of the variable appears as "logged". Please disregard this information for now. We will explain this in the next class. 
+
+9. Interpret the sign of the parameter associated with slope of this model to produce a plausible hypothesis about a mechanism that could potentially explain how GDP per capita could affect healthy life expectancy.
+
+10. Produce a table comparing the adjusted R2 and the p-level associated with slope and the F test obtained with this model and with the model obtained previously (using Gender Inequality Index as the independent variable) and with the model produced in class (using internet usage as the independent variable). Based on these values, what model do you think is the most robust? What numerical evidence from the table did you use to justify your answer?
+
+11. Interpret the sign of the parameter associated with slope to produce a plausible hypothesis about a mechanism that could potentially explain how GDP per capita could affect healthy life expectancy
+
+12. Based on your analysis, which model would you choose as the most appropriate to predict healthy life expectancy? Justify your answer.
+
+13. Based on your model, what value for the selected predictor will be the most associated with a healthy life expectancy of 70 years?
+
+### Further resources
+Video on covariance: https://www.youtube.com/watch?v=qtaqvPAeEJY
+
+Video on correlation: https://www.youtube.com/watch?v=xZ_z8KWkhXE
+
+Video on R square: https://www.youtube.com/watch?v=bMccdk8EdGo
+
+Video on linear regression: https://www.youtube.com/watch?v=nk2CQITm_eo 
+
+Blog on linear regression: https://www.analyticsvidhya.com/blog/2021/10/everything-you-need-to-know-about-linear-regression/ 

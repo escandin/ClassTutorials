@@ -1,0 +1,254 @@
+---
+title: 'Advanced Remote Sensing Lab 7: Lidar processing'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+### Lab due
+March 16 2021
+
+### Goals
+1. To become familiar with the format and contents of lidar data in the .las format.
+2. To learn how to derive, visualize and compare different terrain and height models (DTM, DSN, CHM) from Lidar data.
+3. To learn how to produce tree segmentation using Lidar data.
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session7_lidar"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+fig4path=paste(wd, "Fig4.png", sep="/")
+fig5path=paste(wd, "Fig5.png", sep="/")
+```
+
+### Lab instructions
+
+For this lab, we are going to use the Lidar campaign collected by the city of Philadelphia in 2015.
+
+### 1. Load libraries and setup the environment.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+setwd("/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session7_lidar")
+library("lidR")
+library("link2GI")
+library("mapview")
+library("raster")
+library("rgdal")
+library("rlas")
+library("sp")
+library("sf")
+library("gstat")
+```
+
+#### 1. Locate and download data
+
+Download the tile index.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tilename="PhiladelphiaImagery_TileIndex2015.zip"
+download.file("ftp://ftp.pasda.psu.edu/pub/pasda/philacity/data/Imagery2015/PhiladelphiaImagery_TileIndex2015.zip", paste(getwd(), tilename, sep="/"), method="internal")
+unzip(tilename)
+```
+
+Open QGIS and  display a background map. For that purpose, go to the XYZ tile from the QGIS browser and click on any (the default one is OpenStreetMap). You can add another one (e.g. google imagery) by right clicking on XYZ tiles and selecting "New connection". 
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Then you can enter the appropriate URL in the new window (e.g. https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z} - see image below). 
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Open the tile index in QGIS and select the tile corresponding to an area of interest. Click on the identify features button (red circle 1) and then within any tile of interest. It will display a new panel on the right named "Identify results". Right click on the line entitled "TILELABEL  and select "View feature form". It will display the name of the tile in another window. 
+Copy the name of the tile and enter it in the line corresponding to tilename below. For some reason the tiles for Lidar are named without the two zeroes at the end of the file so you will have to delete them when you paste the name in R.
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+Run the code to decompress the file.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tilename="26790E2868N" # North Philly Suburban
+tileid=paste(tilename, "zip", sep=".")
+download.file(paste("ftp://ftp.pasda.psu.edu/pub/pasda/phillyLiDAR/LAS2015", tileid, sep="/"), paste(getwd(),tileid, sep="/"), method="internal")
+unzip(tileid)
+```
+
+#### 2. Open and explore the data
+List available las files in working directory and open the one of interest. Then read the file and explore its contents. Then plot the file.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+las_files = list.files('.', pattern='.las')
+
+lasfile = readLAS(las_files[3])
+
+las_check(lasfile)
+summary(lasfile)
+plot(lasfile)
+```
+
+Let's inspect the number of classes within the file.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sort(unique(lasfile@data$Classification))
+```
+
+To understand the classes, go to this address: https://www.pasda.psu.edu/uci/DataSummary.aspx?dataset=1048 
+
+Then click on metadata: Categories: 0 Created Not Classified 1 Unclassified 2 Ground 3 Low vegetation 4 Vegetation 5 High vegetation 6 Building 7 Low point 8 Model keypoint 9 Water 10 Bridge 11 Trimmed 12 Overlap 13.
+
+It is possible to classify different classes.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(lasfile, color = "Classification")
+las_class <- filter_poi(lasfile, Classification == 12L)
+plot(las_class)
+```
+
+#### 3. Produce DSM, DTM and CHM
+
+Produce a digital surface model (DSM) and plot it.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dsm <- grid_canopy(lasfile, res = 5, dsmtin())
+plot(dsm, col = height.colors(50))
+```
+
+Crop the dsm and also the las file to make it more manageable.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+e=drawExtent()
+#e=extent(2683850 , 2684532 , 263280.5, 263977.8)
+dsm=crop(dsm, e)
+las_rsz=clip_roi(lasfile, e)
+plot(las_rsz)
+```
+
+Produce digital terrain model (DTM) and plot it.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#dtm1 = grid_terrain(las_rsz, res = 5, algorithm = knnidw(k = 6L, p = 2))
+dtm2 = grid_terrain(las_rsz, res = 5, algorithm = tin())
+#dtm3 = grid_terrain(las_rsz, res = 5, algorithm = kriging(k = 10L))
+plot(dtm2, col = height.colors(50))
+plot_dtm3d(dtm2)
+```
+
+Produce a Canopy Height Model (CHM): for this purpose we will use two approaches
+
+1. Based on the difference between DSM and DTM
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+chmdif=dsm-dtm2
+plot(chmdif)
+plot_dtm3d(chmdif)
+```
+
+2. Based on height normalization: Normalize the image so that all ground points are centered on zero
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+lasnorm = normalize_height(las_rsz, tin())
+plot(lasnorm)
+```
+
+You can see that there are some outlier points. Let's filter them out.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+filter_noise = function(las, sensitivity)
+{
+  p95 <- grid_metrics(las, ~quantile(Z, probs = 0.95), 10)
+  las <- merge_spatial(las, p95, "p95")
+  las <- filter_poi(las, Z < p95*sensitivity)
+  las$p95 <- NULL
+  return(las)
+}
+
+las_rsz <- filter_noise(lasnorm, sensitivity = 1.2)
+plot(las_rsz)
+```
+
+Produce the canopy height model based on normalization.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#chm1 = grid_canopy(lasnorm, 5, p2r())
+#chm2 = grid_canopy(lasnorm, 5, p2r(0.2))
+#chm4 = grid_canopy(lasnorm, 5, dsmtin()) 
+chm6 = grid_canopy(lasnorm, 5, pitfree(thresholds=c(0,10,30,60,90,120), max_edge=c(0,3), subcircle = 1))
+#chm7 <- grid_canopy(lasnorm, 5, pitfree(c(0,10,30,60,90,120), c(3,1.5), subcircle = 0.2))
+plot(chm6, col = height.colors(50))
+plot_dtm3d(chm6)
+```
+
+Write DTM, DSM, and CHM as raster files.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeRaster(dsm, "dsm.tif")
+writeRaster(chm6, "chm6.tif")
+writeRaster(dtm2, "dtm2.tif")
+writeRaster(chmdif, "chmdif.tif")
+```
+
+Open the different objects in QGIS and compare the results. You can install the Qgis2threejs plugin for 3d rendering of the different products (as shown below.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig4path)
+```
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig5path)
+```
+
+#### 4. Produce a tree segmentation
+Smooth the CHM results to reduce gaps in the canopy.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ker <- matrix(1,5,5)
+chm_s <- focal(chm6, w = ker, fun = median)
+plot(chm_s, col = height.colors(50))
+```
+
+Segment trees.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Using the Dalponte method
+ttops <- find_trees(lasnorm, lmf(30,10))
+plot(ttops)
+laseg2=segment_trees(lasnorm, dalponte2016(chm6, ttops))
+trees = filter_poi(laseg2, !is.na(treeID))
+plot(trees, color = "treeID", colorPalette = pastel.colors(100))
+hulls  = delineate_crowns(laseg2, func = .stdmetrics)
+spplot(hulls, "ZTOP")
+writeOGR(obj=hulls, dsn=getwd(), layer="hulls", driver="ESRI Shapefile") 
+
+# Using the Silva method
+laseg3=segment_trees(lasnorm, silva2016(chm6, ttops))
+trees3 = filter_poi(laseg3, !is.na(treeID))
+plot(trees3, color = "treeID", colorPalette = pastel.colors(100))
+hulls3  = delineate_crowns(laseg3, func = .stdmetrics)
+spplot(hulls3, "ZTOP")
+writeOGR(obj=hulls3, dsn=getwd(), layer="hulls3", driver="ESRI Shapefile")
+
+# Using the watershed method
+crowns = watershed(chm_s, th_tree = 9, tol=3, ext =9)()
+plot(crowns, col = pastel.colors(100))
+contour = rasterToPolygons(crowns, dissolve = TRUE)
+plot(chm_s, col = height.colors(50))
+plot(contour, add = T)
+writeOGR(obj=contour, dsn=getwd(), layer="contour", driver="ESRI Shapefile")
+```
+
+Open the tree segmentations results obtained with each algorithm in QGIS with the google satellite images as the background and compare their performance. Make sure that you set the outline color as red and leave the fill empty so that you can see the background images behind the segmentation.
+
+#### Homework
+Select an area of interest within Philadelphia. Then download the Lidar image for the respective tile. Resize it to an area of interest covered predominantly by trees and produce terrain and height models (DTM, DSM, CHM) and a tree segmentation by applying the steps provided in the lab instructions.  Fill up this form for your report: https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUNkYyQUUwSzFOMzM2NEw4OTZTWUZHQkE4Vi4u  
+
+#### Sources:
+https://github.com/Jean-Romain/lidR/wiki
+http://quantitativeecology.org/using-rlidar-and-fusion-to-delineate-individual-trees-through-canopy-height-model-segmentation/ 
+https://ilias.uni-marburg.de/data/UNIMR/lm_data/lm_2092236/unit05/unit05-03_lidar.html
+

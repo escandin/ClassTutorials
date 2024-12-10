@@ -1,0 +1,195 @@
+---
+title: 'Remote sensing lab 5: radiometric normalization'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+## Lab due
+September 30 2021
+
+## Goals
+-To learn how to perform radiometric normalization of satellite images and its applications in remote sensing.
+
+-To become familiar with the rationale and outputs associated with the implementation of a radiometric normalization algorithm.
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/PROJECTS/NASAGeo/MeetingsTeam/Workshop3Colombia/WorkshopTier2/RasterMapR"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+#fig1path=paste(wd, "GEEHelp.png", sep="/")
+#fig2path=paste(wd, "GEECatalog.png", sep="/")
+#fig3path=paste(wd, "GEEWindows.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Background
+
+Radiometric normalization refers to a procedure that expresses pixel values in a target raster image as a function of the radiometric conditions of a reference image. It is used to reduce differences in atmospheric, illumination and other conditions that can produce differences in reflectance not associated with the  inherent reflective properties of ground materials. 
+
+Radiometric normalization can facilitate the production of radiometrically consistent mosaics when data from different dates are needed to cover a given study area. It also helps to produce consistent classification results and extrapolate thematic map results over time. 
+
+Since seasonal differences are inherent to ground conditions, radiometric normalization should not be applied to produce mosaics with data from different seasons. Radiometric normalization works well when the images used for the analysis contain enough pixels representing no change to produce a no change distribution against which changes are compared.
+
+For this lab, we will use the rasterMapR package that was developed under my lab. The package is still in a test phase and therefore the compatibility with different software and OS distributions is still to be tested in a comprehensive manner.
+
+## Instructions
+1. Reproduce the steps for data downloading described in lab 2 to download from Earth explorer (http://earthexplorer.usgs.gov), two contiguous Landsat images from collection 2, level 2. The images correspond to paths 05 and 06, row 057 acquired on January 18 and 25, 2016. The names of the images are LC08_L2SP_005057_20160118_20200907_02_T1 and LC08_L2SP_006057_20160125_20200907_02_T1.
+
+2. Install the rasterMapR package from github and load other libraries. Define a folder that you will use for storing temporary files (this is a good practice in case R aborts and you have to delete the files manually). 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# defina la ruta donde  creará el directorio
+install.packages("https://github.com/escandin/rastmapr/blob/master/rasterMapR_1.2.tar.gz")
+library("rasterMapR")
+library("raster")
+library("RStoolbox")
+library("rasterMapR")
+
+dir.create('tempfiledir')
+tempdir=paste(getwd(),'tempfiledir', sep="/")
+rasterOptions(tmpdir=tempdir)
+```
+
+3.Select a folder as the working directory and make sure the downloaded files are there. The function EEstackWithoutMeta() decompresses images in .tar format and creates a list with each raster stack as a separate element.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+path=("/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class5/Lab5Data")
+setwd(path)
+dir()
+tars <- list.files('.', pattern='tar')
+instack <- EEstackWithoutMeta(tars, sat.nm="LO08")
+instack
+```
+
+4. Select the bands of interest to calibrate. In this case it will be bands 2 to 7. Remove the instack file from the environment to save memory.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+subset=lapply(instack, function(x)(
+  x[[2:7]]))
+rm(instack)
+```
+
+5. Let's plot the files to identify the area in common. Then, let's cut the extent of the images to make the processing faster.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+par(mfrow=c(1,2))
+plotRGB(subset[[2]], r=4, g=3, b=2, stretch="lin")
+plotRGB(subset[[1]], r=4, g=3, b=2, stretch="lin")
+
+par(mfrow=c(1,1))
+plotRGB(subset[[1]], r=4, g=3, b=2, stretch="lin")
+e=drawExtent()
+subset[[1]]=crop(subset[[1]], e)
+
+plotRGB(subset[[2]], r=4, g=3, b=2, stretch="lin")
+e=drawExtent()
+subset[[2]]=crop(subset[[2]], e)
+
+par(mfrow=c(1,2))
+plotRGB(subset[[2]], r=4, g=3, b=2, stretch="lin")
+plotRGB(subset[[1]], r=4, g=3, b=2, stretch="lin")
+```
+
+6. Perform radiometric normalization using the s3d() function. Then check the plots that are produced once the function finalize running. Let's also check the values of the regression parameters obtained in the output object.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+s3dmod=s3d(strips=subset, writemasks=FALSE)
+s3dmod$data
+s3dmod$paramstats
+s3dmod$parameters
+```
+
+7. Load the CalibrateRaster2() function:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+CalibrateRaster2 <- structure(function #Calibrate raster
+### This function implements parameters from \code{\link{PIFmodel}} to
+### calibrate multi- or hiper-spectral layers.
+(
+    pifs, ##<<\code{List}. Set of linear models such as these produced
+          ##by \code{\link{PIFmodel}}.
+    mlayer, ##<<\code{RasterLayer}. Mult-layer object such as that
+            ##returned by \code{\link{EEstackWithoutMeta}}. If missing
+            ##then the set used to compute the \code{pifs} is
+            ##recycled.
+    round. = 0 ##<<\code{numeric} or \code{NULL}. Integer indicating
+             ##the number of decimal places. If \code{NULL} then this
+             ##argument is ignored.
+){
+ coefs <- Map("coefficients", pifs)
+  intercepts <- mapply(function(x) x[1L], coefs)
+  names(pifs)=names(mlayer)
+  slopes <- mapply(function(x) x[2L], coefs)
+  if (missing(mlayer)) 
+    mlayer <- as.list(attr(pifs, "env"))[["strips"]]
+  #radiostack <- mlayer[[1L]][[names(pifs)]]
+  radiostack <- mlayer[[names(pifs)]]
+  b = 1
+  normedstack = intercepts[b] + (slopes[b] * radiostack[[b]])
+  print(paste(b, "band processed", sep = " "))
+  for (b in 2:nlayers(radiostack)) {
+    normedstack = stack(normedstack, intercepts[b] + (slopes[b] * 
+                                                        radiostack[[b]]))
+    print(paste(b, "bands processed", sep = " "))
+  }
+  if (!is.null(round.) | round. >= 0) 
+    normedstack = round(normedstack, digits = round.)
+  names(normedstack) <- names(radiostack)
+  nms <- !names(mlayer[[1L]]) %in% names(pifs)
+  if (any(nms)) {
+    normedstack <- stack(normedstack, raster::subset(mlayer[[1L]], 
+                                                     names(mlayer[[1L]])[nms]))
+  }
+  return(normedstack)
+## RasterBrick.
+} , ex=function(){
+    ## \donttest{
+    ##     tarFiles <- c('LT050070651987081201T1-SC20181031175314.tar.gz',
+    ##                   'LT050060661988072201T1-SC20181031160603.tar.gz')
+    ##     tarPaths <- system.file(tarFiles, package = 'aRn')
+    ##     stack <- EEstackWithoutMeta(tarPaths, c(1,3:6))
+    ##     ## model <- PIFmodel(stack, pvalue = 3E-1, brackets = 7)
+    ##     ## or
+    ##     mlayer <- RasterIntersection(stack)
+    ##     model <- PIFmodel(mlayer, pvalue = 3E-1, brackets = 7)
+    ##     ## then
+    ##     calib <- CalibrateRaster(model, stack)
+    ## }
+ 
+})
+```
+
+8. The CalibrateRaster2() function applies the regression parameters obtained from the s3d() function to calibrate the target image as a function of the reference one:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+calibrated <- CalibrateRaster2(s3dmod$parameters, 
+                               subset[[1]])
+```
+
+9. Let's produce two mosaics. One with the unormalize image and the other with the normalized one. Then plot the RGBs to compare the results.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unnorm=merge(subset[[1]], subset[[2]])
+norm=merge(calibrated, subset[[2]])
+
+pdf("VGutierrez_Lab5.pdf")
+par(mfrow=c(1,1))
+plotRGB(unnorm, r=4, g=3, b=2, stretch="lin")
+plotRGB(norm, r=4, g=3, b=2, stretch="lin")
+dev.off()
+```
+
+## Lab deliverables
+1. Download from Earth explorer (http://earthexplorer.usgs.gov), two contiguous Landsat images from collection 2, level 2. One image corresponds to path 06 and row 066 acquired on August 18, 2015. The other one corresponds to path 07, row 066 acquired on August 22, 2014. The names of the images are: LC08_L2SP_006066_20150818_20200908_02_T1 and  LC08_L2SP_007066_20140822_20200911_02_T1
+
+2. Produce two mosaics. One with the two original images and the other with the normalization of the image from 2014 as a function of the image in 2015.
+
+3. Produce a single pdf file with the RGB plots corresponding to the unormalized and the normalized images images as shown in step 9 of the lab. Upload the pdf to module 5 in canvas (4 pts).
+
+__

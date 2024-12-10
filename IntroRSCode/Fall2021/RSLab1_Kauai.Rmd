@@ -1,0 +1,186 @@
+---
+title: 'Remote Sensing Lab 1: Downloading, importing and visualizing spatial data
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class1/RS_Lab1_2021"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 02 2021
+
+## Goal
+To become familiar with basic functions for data downloading, visualization resizing and interpretation using the R environment.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Downloading and opening required software
+The instructions below are adapted from here (https://www.andrewheiss.com/blog/2012/04/17/install-r-rstudio-r-commander-windows-osx/)
+
+### In Windows
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Windows” > “base” > “Download R X.X.X for Windows” (latest version). You can also click on "Installation and other instructions for further details.
+2. Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop and install it. Leave all default settings in the installation options.
+
+### In Mac
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Mac OS X” > “R-X.X.X.pkg” (latest version).
+2.	Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop.
+4.	Install RStudio by dragging the application icon to your Applications folder.
+5. Install xcode to execute the plot3D function. You can download it from here: https://developer.apple.com/xcode/ . You will need to restart your machine after installation.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructios below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+3. If the code runs, follow the instructions at then end to change it so that it produces similar results but for the island of Oahu instead of Kauai. Most of the adjustments consist of changing the links to the data sources to download and the names of some objects. Please make sure you spell everyting curreclty. Do not to modify anything else including parenthesis or quotation marks, otherwise the code will not run. 
+4.	Save the maps with the DEM and the Landsat image printed as a pdf file in canvas.
+
+Have fun!
+
+## Lab activities
+### System setup
+
+Load required libraries.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(rasterVis)
+library(raster)
+library(rgdal)
+library(plot3D)
+```
+
+If you receive an error such as "Error in library(library name) : there is no package called (library name)", please install the library, such as:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+install.packages("library name")
+```
+
+Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+setwd("/Users/tug61163/Documents/Courses/IntroRemoteSensing/2021Fall/Class1/RS_Lab1_2021")
+```
+
+### Download, unzip and plot DEM data for the island of Kauai
+
+Step 1: Run the script below to download DEM data from the island of Kauai.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+downloadURL=("ftp://soest.hawaii.edu/coastal/webftp/Kauai/dem/Kauai_DEM.zip")
+DEMfilename="Kauai_DEM.zip"
+download.file(downloadURL, DEMfilename)
+```
+
+Step 2: Use your file manager app (file explorer in windows and finder in) to navigate to your working directory that you entered as a string (or text) in the setwd function above. You can see that step 1 downloaded a zip file named "Kauai_DEM.zip". You can also read the files in the working directory from R by running the function dir() as shown below. Then use the unzip() function to decompress the file:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+unzip(DEMfilename)
+```
+
+Use the code below to unzip the file for Kauai. Check the working directory again and you will see a decompressed file ("kaui_dem"). Open it as a raster object in R, and plot it. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+DEM=raster("kaui_dem")
+plot(DEM)
+```
+ 
+Step 3: Create a perspective plot. Change theta and phi values to rotate the image as desired.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+persp(DEM)
+persp(DEM, theta=60, phi=0) 
+```
+
+Step 4: Plot an interactive DEM and rotate it. If you are working in a mac machine, make sure that you installed xcode as indicated at the beginning of this tutorial. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot3D(DEM, zfac=1)
+```
+
+### Download, unzip and explore satellite imagery data for the island of Kauai
+
+Step 5: Adapt the code in step 1 to download and decompress Landsat satellite imagery data from the island of Kauai. Use the function stack() instead of raster() to open this object in R.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+downloadURL=("ftp://ftp.soest.hawaii.edu/coastal/webftp/Kauai/landsat/geotiff.zip")
+LandsatFilename="geotiff.zip"
+download.file(downloadURL, LandsatFilename)
+
+unzip(LandsatFilename)
+Landsat=stack("kauai_niihau_lehua2.tif")
+```
+
+Step 6: Let's explore the object that you just created named Landsat (you can see it loaded in  your environment in R studio (top left panel). First, you can see the contents of the object by runing:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+Landsat
+```
+
+Let's plot it
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(Landsat)
+```
+
+You can see three maps instead of one. Each map represents the spectral response of different features in the island to light emitted by the sun in different regions of the electromagnetic spectrum. We will learn this in more detail during the semester. For now, let's plot all the three bands in what is called a true color composite:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(Landsat, R=3, G=2, B=1, stretch="lin")
+```
+
+We will learn more about color composites during the semester. For now, let's say that a true color composite represents the colors of different objects as we would see them if we sat on top of the satellite. 
+
+Step 7: You can see that the image covers an area that is bigger than Kauai. Let's cut it to our area of interest and plot it again. For that purpose, you run first, the function drawExtent(). Then hover over the plot in your lower left panel of R studio and click in the upper left and lower right corner of the area covering just the island of Kauai (see figure below). Then apply that extent to crop the image to the area of Kauai and plot it.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+e=drawExtent()
+LandsatRsz=crop(Landsat, e)
+plotRGB(LandsatRsz, R=3, G=2, B=1, stretch="lin")
+```
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Step 8. save the plots for the DEM and the resized satellite image as PDF in your working folder
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("VGutierrez_Lab1.pdf")
+  plot(DEM)
+  plotRGB(LandsatRsz, R=3, G=2, B=1, stretch="lin")
+dev.off()
+```
+
+## Instructions
+Edit the code in steps 1 to 5 in order to download, unzip, import and plot a map with the DEM and another with the Landsat RGB image produced for the island of Oahu instead of Kauai. Below are detailed instructions for each step:
+
+Step 1: Change the URL in the downloadURL function to download data from the island of Oahu instead of Kauai. Browse this site http://www.soest.hawaii.edu/coasts/data/ and find the Coastal Imagery data for Oahu. Then click on the "DEM"" link. In the new page, locate your mouse on the "10m_DEM" link but do not open it. Instead, right click the mouse and select the option to copy the link. 
+
+Paste the link in the downloadURL object to replace the one for the island of Oahu. In the next line, change the DEMfilename for the name that appears at the end of the link that you pasted in downloadURL (all the text after the last/). Run this code to download the data from Oahu. Make sure you do not change anything else, particularly parentheses and quotation marks.
+
+Steps 2: Change the name of the DEM object for "oahu_dem" instead of "kaui_dem" in the DEM object and run it.
+
+Steps 3 and 4: Run the code to graph perspective and 3D plots for Oahu.
+
+Step 5: Go to the web site provided above and in the coastal imagery for Oahu, click on "NOAA Landsat". Then locate your pixel on "GeoTIFF (zipped ~ 2MB)" and right click on it to copy the link and paste it in downloadURL to replace the previous one for Kauai. Unzip the code and then go to then locate the name of the decompress file with a .tif extension. Enter that name, including the extension, as the name assigned to the Landsat object. 
+
+Step 6: run as is.
+
+Step 7: This step is not necessary because the image already comes cropped to the size of the island.
+
+Step 8: Change the name of the pdf file for your Last_nameFirst_initial and the name of the assignment ("GutierrezV_Lab1.pdf"").
+
+Go to your working directory,  identify the pdf file and load it in module 1 in Canvas (Upload Lab 1 here).
+
+## Deliverables
+1. Upload to canvas the PDF file produced with the DEM and the RGB Landsat image composite.
+
+2. Submit a short paragraph discussing whether you see any correlation between the topography of the island observed in the DEM object and the distribution of vegetated and non vegetated areas shown by the satellite image.

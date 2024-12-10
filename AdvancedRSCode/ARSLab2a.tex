@@ -1,0 +1,418 @@
+\PassOptionsToPackage{unicode=true}{hyperref} % options for packages loaded elsewhere
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage[]{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\usepackage{hyperref}
+\hypersetup{
+            pdftitle={Advanced Remote Sensing Lab 2: Introduction to Google Earth Engine in R},
+            pdfauthor={Victor Gutierrez (victorhugo@temple.edu)},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+
+\title{Advanced Remote Sensing Lab 2: Introduction to Google Earth Engine in R}
+\author{Victor Gutierrez
+(\href{mailto:victorhugo@temple.edu}{\nolinkurl{victorhugo@temple.edu}})}
+\date{}
+
+\begin{document}
+\maketitle
+
+\hypertarget{lab-due}{%
+\subsection{Lab due}\label{lab-due}}
+
+January 26 2021
+
+\hypertarget{goals}{%
+\subsection{Goals}\label{goals}}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  To become familiar with the layout and functionality of the GEE
+  platform.
+\item
+  To become familiar with basic JavaScript coding in general and applied
+  to GEE
+\item
+  To introduce available data, basic object types and manipulation in
+  GEE
+\end{enumerate}
+
+\hypertarget{total-score}{%
+\subsection{Total score}\label{total-score}}
+
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+\hypertarget{lab-instructions}{%
+\subsection{Lab instructions}\label{lab-instructions}}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  Launch Google Earth engine in your browser (preferably chrome):
+  \url{https://code.earthengine.google.com/}
+\item
+  Go to the help menu (? symbol in the top-left of the interface) and
+  perform a ``Feature Tour''
+\end{enumerate}
+
+\includegraphics[width=21.11in]{/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session2_IntroToGEE/GEEHelp}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{2}
+\tightlist
+\item
+  Click on the ``Data Sets'' tab at the top of the search panel. Then on
+  the drop down menu select Landsat/Landsat Collection 1 Level-1/Landsat
+  8 OLI/TIRS C1 Level-1. Browse the datasets available
+\end{enumerate}
+
+\includegraphics[width=31.19in]{/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session2_IntroToGEE/GEECatalog}
+
+Copy and paste the code below
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// Get the image.}
+\KeywordTok{var}\NormalTok{ lc8 }\OperatorTok{=} \VariableTok{ee}\NormalTok{.}\AttributeTok{Image}\NormalTok{(}\StringTok{'LANDSAT/LC8_L1T_TOA/LC80140322016081LGN00'}\NormalTok{)}
+
+\CommentTok{// Add the image to the map.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(lc8)}\OperatorTok{;}
+
+\CommentTok{// Center the map display on the image.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{centerObject}\NormalTok{(lc8}\OperatorTok{,} \DecValTok{8}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+You can see that the image looks very dark. Can you explain why?
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{3}
+\tightlist
+\item
+  Check the parameterization of the addLayer() function by searching on
+  the Docs tab. Notice the name of the second parameter (visparams).
+  Check the visualization parameters here:
+  \url{https://developers.google.com/earth-engine/guides/image_visualization}
+\end{enumerate}
+
+Use either of the options below to visualize the image. Modify visparams
+to improve the visualization as shown below. You can read about gamma
+correction here:
+\url{https://www.cambridgeincolour.com/tutorials/gamma-correction.htm}.
+Add also a name to the layer.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{//OPTION 1: show layers individually}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(lc8}\OperatorTok{,}
+\OperatorTok{\{}\DataTypeTok{bands}\OperatorTok{:} \StringTok{'B6, B5, B4'}\OperatorTok{,} \DataTypeTok{min}\OperatorTok{:} \FloatTok{0.05}\OperatorTok{,} \DataTypeTok{max}\OperatorTok{:} \FloatTok{0.8}\OperatorTok{,} \DataTypeTok{gamma}\OperatorTok{:} \FloatTok{1.6}\OperatorTok{\},} \StringTok{'Landsat8TOA'}\NormalTok{)}\OperatorTok{;}
+
+\CommentTok{//OPTION 2: show layers as a string}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(lc8}\OperatorTok{,}
+\OperatorTok{\{}\DataTypeTok{bands}\OperatorTok{:}\NormalTok{ [}\StringTok{'B6'}\OperatorTok{,} \StringTok{'B5'}\OperatorTok{,} \StringTok{'B4'}\NormalTok{]}\OperatorTok{,} \DataTypeTok{min}\OperatorTok{:} \FloatTok{0.05}\OperatorTok{,} \DataTypeTok{max}\OperatorTok{:} \FloatTok{0.8}\OperatorTok{,} \DataTypeTok{gamma}\OperatorTok{:} \FloatTok{1.6}\OperatorTok{\},} \StringTok{'Landsat8TOA'}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{explore-some-of-the-settings-and-the-work-environment.}{%
+\section{5. Explore some of the settings and the work
+environment.}\label{explore-some-of-the-settings-and-the-work-environment.}}
+
+Change the second argument of the centerObject() function from 8 to 10
+and run. What happens? What happens when you change it to 6?
+
+Explore the map window tool by zooming in and out (red circle \#1).
+
+Use the layers tool to turn the open layer on and off. Notice that the
+name is the same as the one that you specified in the addLayer()
+function (red circle \#2).
+
+Click on the inspector, then click anywhere in the image and explore the
+information that appears in the inspector. Make sure you expand each
+attribute (red circle \#3).
+
+Write the code below and explore the image properties in the console
+(red circle \#4).
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{print}\NormalTok{(lc8)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics[width=46.56in]{/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session2_IntroToGEE/GEEWindows}
+6. Calculate the NDVI for your image and display it. The "palette
+argument uses a CSS style. You can check the color codes here:
+\url{https://www.quackit.com/css/css_color_codes.cfm}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{//Calculate NDVI}
+\KeywordTok{var}\NormalTok{ NDVI }\OperatorTok{=} \VariableTok{lc8}\NormalTok{.}\AttributeTok{normalizedDifference}\NormalTok{([}\StringTok{'B5'}\OperatorTok{,} \StringTok{'B4'}\NormalTok{])}\OperatorTok{;}
+
+\CommentTok{// Display image in a gradient stretch}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{ (NDVI}\OperatorTok{,} \OperatorTok{\{}\DataTypeTok{min}\OperatorTok{:} \FloatTok{-0.2}\OperatorTok{,} \DataTypeTok{max}\OperatorTok{:} \FloatTok{0.5}\OperatorTok{,} \DataTypeTok{palette}\OperatorTok{:}\NormalTok{ [}\StringTok{'FFFFFF'}\OperatorTok{,} \StringTok{'339900'}\NormalTok{]}\OperatorTok{\},} \StringTok{"NDVI"}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{6}
+\tightlist
+\item
+  Mask clouds. Remove the lines used to calculate the NDVI and display
+  it. The code should look like this
+\end{enumerate}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// Get the image.}
+\KeywordTok{var}\NormalTok{ lc8 }\OperatorTok{=} \VariableTok{ee}\NormalTok{.}\AttributeTok{Image}\NormalTok{(}\StringTok{'LANDSAT/LC8_L1T_TOA/LC80140322016081LGN00'}\NormalTok{)}
+\CommentTok{// Add the image to the map.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(lc8}\OperatorTok{,}
+\OperatorTok{\{}\DataTypeTok{bands}\OperatorTok{:}\NormalTok{ [}\StringTok{'B6'}\OperatorTok{,} \StringTok{'B5'}\OperatorTok{,} \StringTok{'B4'}\NormalTok{]}\OperatorTok{,} \DataTypeTok{min}\OperatorTok{:} \FloatTok{0.05}\OperatorTok{,} \DataTypeTok{max}\OperatorTok{:} \FloatTok{0.8}\OperatorTok{,} \DataTypeTok{gamma}\OperatorTok{:} \FloatTok{1.6}\OperatorTok{\},} \StringTok{'landsat 8 TOA'}\NormalTok{)}\OperatorTok{;}
+
+\CommentTok{// Center the map display on the image.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{centerObject}\NormalTok{(lc8}\OperatorTok{,} \DecValTok{8}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+Select the ``Docs'' tab and search for ``cloud''. Then inpsect the
+function ``ee.Algorithms.Landsat.simpleCloudScore(image)''. Then write
+the code below:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// Add the cloud likelihood band to the image.}
+\KeywordTok{var}\NormalTok{ cloudscore }\OperatorTok{=} \VariableTok{ee}\NormalTok{.}\VariableTok{Algorithms}\NormalTok{.}\VariableTok{Landsat}\NormalTok{.}\AttributeTok{simpleCloudScore}\NormalTok{(lc8)}\OperatorTok{;}
+
+\CommentTok{// Add the cloud image to the map. This will display the first three bands as R, G, B by default.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(cloudscore}\OperatorTok{,} \OperatorTok{\{\},} \StringTok{'Cloud Likelihood, all bands'}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+Click on the ``inspector tab and click on different locations in the
+image. You can see that the new cloudscore image added a band
+named''clouds" to the original dataset. Let's select that band and
+display it.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// Since you are interested in only the cloud layer, specify just this band to be displayed in the parameters of the Map.addLayer statement. }
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(cloudscore}\OperatorTok{,} \OperatorTok{\{}\DataTypeTok{bands}\OperatorTok{:} \StringTok{'cloud'}\OperatorTok{\},} \StringTok{'Cloud Likelihood'}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+Select the inspector tab and then in different locations of the image to
+assess how the cloud score values differ in cloudy and non-cloudy areas.
+Based on your assessment, select the threshold that you think is best to
+discriminate between cloudy and non-cloudy areas. Let's use that
+threshold to mask clouds. In the code below, I selected 40
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// Isolate the cloud likelihood band.}
+\KeywordTok{var}\NormalTok{ cloudLikelihood }\OperatorTok{=} \VariableTok{cloudscore}\NormalTok{.}\AttributeTok{select}\NormalTok{(}\StringTok{'cloud'}\NormalTok{)}\OperatorTok{;}
+
+\CommentTok{// Compute a mask in which pixels below the threshold are 1 (you can check the lt function in the Docs tab.}
+\KeywordTok{var}\NormalTok{ cloudPixels }\OperatorTok{=} \VariableTok{cloudLikelihood}\NormalTok{.}\AttributeTok{lt}\NormalTok{(}\DecValTok{40}\NormalTok{)}\OperatorTok{;}
+
+\CommentTok{// Add the image to the map.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(cloudPixels}\OperatorTok{,} \OperatorTok{\{\},} \StringTok{'Cloud Mask'}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+In the ``layers'' tab uncheck all the layers except the cloud mask and
+the Landsat toa layers. Select and de-select the cloud mask to compare
+with the RGB and assess whether you are satisfied with the result
+obtained. If not, change the threshold and run again.
+
+Use the created mask to remove clouds from the Landsat image and check
+the results
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// Mask out the Landsat image.}
+\KeywordTok{var}\NormalTok{ lc8_NoClouds }\OperatorTok{=} \VariableTok{lc8}\NormalTok{.}\AttributeTok{updateMask}\NormalTok{ (cloudPixels)}\OperatorTok{;}
+
+\CommentTok{// Review the result.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(lc8_NoClouds}\OperatorTok{,} \OperatorTok{\{}\DataTypeTok{bands}\OperatorTok{:}\NormalTok{ [}\StringTok{'B6'}\OperatorTok{,} \StringTok{'B5'}\OperatorTok{,} \StringTok{'B4'}\NormalTok{]}\OperatorTok{,} \DataTypeTok{min}\OperatorTok{:} \FloatTok{0.1}\OperatorTok{,} \DataTypeTok{max}\OperatorTok{:} \FloatTok{0.5}\OperatorTok{\},} \StringTok{'Landsat8scene_cloudmasked'}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+Zoom into the Philadelphia area. How did the cloud masking perform in
+urban areas? Check the hazy cloud in the north-west. How well was the
+hazy area masked?
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{7}
+\tightlist
+\item
+  Perform an unsupervised classification:
+\end{enumerate}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// select the bounding box of a Landsat-8 image to sample pixels}
+\KeywordTok{var}\NormalTok{ region }\OperatorTok{=} \VariableTok{lc8_NoClouds}\NormalTok{.}\AttributeTok{geometry}\NormalTok{()}
+\AttributeTok{print}\NormalTok{(region)}
+
+\CommentTok{// Select random pixels for training the unsupervised classification}
+\KeywordTok{var}\NormalTok{ training }\OperatorTok{=} \VariableTok{lc8_NoClouds}\NormalTok{.}\AttributeTok{sample}\NormalTok{(}\OperatorTok{\{}
+  \DataTypeTok{region}\OperatorTok{:}\NormalTok{ region}\OperatorTok{,}
+  \DataTypeTok{scale}\OperatorTok{:} \DecValTok{30}\OperatorTok{,}
+  \DataTypeTok{numPixels}\OperatorTok{:} \DecValTok{5000}
+\OperatorTok{\}}\NormalTok{)}\OperatorTok{;}
+
+\CommentTok{// train cluster based on sampled pixels}
+\KeywordTok{var}\NormalTok{ clusterer }\OperatorTok{=} \VariableTok{ee}\NormalTok{.}\VariableTok{Clusterer}\NormalTok{.}\AttributeTok{wekaKMeans}\NormalTok{(}\DecValTok{15}\NormalTok{).}\AttributeTok{train}\NormalTok{(training)}\OperatorTok{;}
+
+\CommentTok{// classify the entire image based on teh trained cluster}
+\KeywordTok{var}\NormalTok{ result }\OperatorTok{=} \VariableTok{lc8_NoClouds}\NormalTok{.}\AttributeTok{cluster}\NormalTok{(clusterer)}\OperatorTok{;}
+
+\CommentTok{// Display the classified image with random colors.}
+\VariableTok{Map}\NormalTok{.}\AttributeTok{addLayer}\NormalTok{(}\VariableTok{result}\NormalTok{.}\AttributeTok{randomVisualizer}\NormalTok{()}\OperatorTok{,} \OperatorTok{\{\},} \StringTok{'clusters'}\NormalTok{)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+Explore the results and modify the number of clustes in the variable
+``clusterer'' as needed until the number of classes descriminate
+reasonably well the land covers in the landscape.
+
+\hypertarget{homework}{%
+\subsection{Homework}\label{homework}}
+
+Apply the steps described above to visualize, mask, produce an NDVI and
+perform a supervised classification to the following image:
+LC80440332016115LGN00
+
+Change the appropriate arguments in the script to produce the following
+outputs. Produce a screenshot of each one of them and submit them as
+your report: ADD LINK
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  An optimal RGB visualization of the input image using bands 5, 4, 3.
+  Please modifiyi the stretch and gamma parameters to optimize
+  visualization.
+\item
+  An NDBI image with a color palette from red, to yellow, to green. You
+  can find the NDBI formula here:
+  \url{https://www.linkedin.com/pulse/ndvi-ndbi-ndwi-calculation-using-landsat-7-8-tek-bahadur-kshetri}
+\item
+  A cloud mask prouduced based on an optimal threshold applied to the
+  cloudscore image
+\item
+  An unsupervised classification with the number of clusters that best
+  represent the land cover types in the original image.
+\end{enumerate}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+
+\end{Highlighting}
+\end{Shaded}
+
+\end{document}

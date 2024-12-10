@@ -1,0 +1,347 @@
+---
+title: 'Advanced Remote Sensing Lab 5: Cloud-based image data processing'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+### Lab due
+February 23 2021
+
+### Goals
+In this lab you will learn:
+1. What are image collections and how to explore them
+2. How to apply spatial and temporal filtering to image collections
+3. How to calculate temporal statistics through the use of reducers
+4. How to use image collections to produce time series plots and animations
+5. How to apply standard and customized function to time series
+6. How to reduce noise in the time series by removing pixels contaminated with clouds and cloud shadows.
+7. How to select features in the image and produce graphs representing temporal changes in each one of them.
+8. How to interpret temporal profiles and temporal statistics
+
+### Total score
+The lab counts for up to 3 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/AdvancedRS/Spring2021/Session5_CloudComputing"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Pins.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+### Lab instructions
+
+#### 1.	Image collection visualization
+Launch Google Earth engine in your browser (preferably chrome): https://code.earthengine.google.com/
+
+An image collection corresponds to a set of images from a certain remote sensing data product stored in the GEE catalog. Let's open and visualize the image collection corresponding to Landsat 8 surface reflectance (https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_SR)
+```{JavaScript}
+// Get an image collection.
+var l8_collection = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR");
+
+// Visualize an image collection and center the display.
+Map.addLayer(l8_collection,
+{bands: ['B5', 'B4', 'B3'], min: 50, max: 3000, gamma: 1.6}, 'l8SA collection');
+Map.setCenter(-84.4013, 42.2459, 11);
+
+// Print the information about the image collection.
+print(l8_collection);
+```
+
+Notice the error shown in the console. It means that the number of images is higher than the quota allowed by GEE. That is because it would have to print all the images that the Landsat 8 mission has collected throgout its lifetime globally. Let's filter the image spatially and temporarilly to constrain the data to a manageable size.
+
+#### 2. Spatial filtering
+First, let's perform a spatial filter. A spatial filter selects any images available within a user-defined area. Let's first select a spatial boundary from which data will be collected. For that purpose, click on the draw a rectangle button from the map window (blue circle  in the figure below).
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+Then, draw approximately a rectangle covering your area of interest as shown in the figure below. It will create a new imported variable named "geometry". Click on "geometry" and change the name for "StudyArea" (blue circle 1 in the figure below).
+
+Click on the arrows associated to study area and explore the properties of the object (blue circle 2 in the figure below). 
+
+Clicking on the blue square next to Imports will show you the code that generated the geometry (blue circle 3 in the figure below). You can copy and paste this code and paste it in any script to reproduce the geometry. 
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+If you hover on the line where the variable name is (blue circle 1 in the figure above), a trashcan appears. Clicking on the trash can prompts you to delete the object.
+
+Let's filter the image to the boundaries of your study area by running the code below
+```{JavaScript}
+// Filter to the scenes that intersect your study region.
+var l8_StudyArea = l8_collection.filterBounds(StudyArea);
+
+// Display the image.
+Map.addLayer(l8_StudyArea,
+{bands: ['B5', 'B4', 'B3'], min: 500, max: 3200, gamma: 2}, 'l8 collection');
+Map.setCenter(-84.4013, 42.2459, 11);
+
+// Print the information about the image collection.
+print(l8_StudyArea);
+```
+
+Now you can see that the information associated to the image collection can be printed in the console instead of generating an error.
+
+Let's get some statistics about the image collection
+
+```{JavaScript}
+// Count and print the number of images.
+var count = l8_StudyArea.size(); 
+print('Count of landsat8_studyArea: ', count);
+```
+
+#### 3. Temporal filtering
+A temporal filter selects any images available within a user-defined time-period. Let's select all images within the study area acquired between Jan and Dec 2020
+```{JavaScript}
+// Filter the collection to a time period of interest.
+var l8SA_2020 = l8_StudyArea.filterDate('2020-01-01', '2020-12-31');
+print(l8SA_2020);
+
+var count17 = l8SA_2020.size();
+print('Count of landsat8_SA_2020: ', count17);
+```
+
+#### 4. Explore the filtered image collection
+Once you have obtained your image collection for the desired area and time period, you have different options to manipulate it
+
+```{JavaScript}
+// Get statistics for a property of the images in the collection.
+var sunStats = l8_StudyArea.aggregate_stats('SUN_ELEVATION'); print('Sun elevation statistics: ', sunStats);
+
+// Sort by a cloud cover property, get the least cloudy image.
+var LoCloudimage = ee.Image(l8_StudyArea.sort('CLOUD_COVER').first());
+print('Least cloudy image: ', LoCloudimage);
+
+// Limit the collection to the 10 most recent images.
+var recent = l8_StudyArea.sort('system:time_start', false).limit(10);
+print('Recent images: ', recent);
+```
+
+#### 5.	Reducers
+Reducers allow to calculate temporal statistics for each pixel-position. Let's calculate the mean (PENDING), median and standard deviation within the filtered image collection
+```{JavaScript}
+// Reduce the ImageCollection to get the median, mean and standard deviation in each pixel.
+var l8mean = l8SA_2020.mean(); 
+print(l8mean, 'mean_landsat8_2020');
+
+var l8median = l8SA_2020.median(); 
+//print(l8median, 'median_landsat8_2020');
+
+var l8sd = l8SA_2020.reduce(ee.Reducer.stdDev());
+//print(l8sd, 'sd_landsat8_2020');
+
+
+// Display the result and center the map on the study region.
+Map.addLayer(l8mean, 
+             {bands: ['B5', 'B4', 'B3'], min: 500, max: 3200, gamma: 1}, 'l8mean');
+
+Map.addLayer(l8median, 
+             {bands: ['B5', 'B4', 'B3'], min: 500, max: 3200, gamma: 1}, 'l8median');
+
+Map.addLayer(l8sd, 
+             {bands: ['B5_stdDev', 'B4_stdDev', 'B3_stdDev'], min: 500, max: 3200, gamma: 1}, 'l8sd');
+
+Map.centerObject(StudyArea, 11);
+```
+
+Compare the mean, median and SD images. Also click on the Inspector and click anywhwere within the images. Then compare the values for the mean and the median. Why are the mean and the median so different? Why is the standard deviation is too noisy. Let's figure that out.
+
+#### 6. Produce a function and apply it to an image collection
+Let's calculate the NDVI to all images in the collection and animate it. For this we will have to produce a function using the standard normalizedDifference function.
+
+```{JavaScript}
+// Produce a function that calculates NDVI and adds it as a band to the original images. The function rename() gives a new name to the band
+function NDVIts(image) {
+  var ndvi = image.normalizedDifference(['B5', 'B4']).rename('NDVI');
+  return image.addBands(ndvi);
+}
+
+var l8SA_2020ndvi = l8SA_2020.map(NDVIts);
+print(l8SA_2020ndvi, 'l8ndvi')
+```
+
+#### 7. Animate the NDVI
+The code below selects the NDVI layer and then produces an animation with all the images within the filtered image collection.
+```{JavaScript}
+//select ndvi band
+var ndvi = l8SA_2020ndvi.select('NDVI');
+//print(ndvi, 'ndvi')
+
+// Define RGB visualization parameters.
+var visParams = {
+  min:-1,
+  max: 1,
+  palette: [
+    'FFFFFF', 'CE7E45', 'DF923D', 'F1B555', 'FCD163', '99B718', '74A901',
+    '66A000', '529400', '3E8601', '207401', '056201', '004C00', '023B01',
+    '012E01', '011D01', '011301'
+  ],
+};
+
+// Create RGB visualization images for use as animation frames.
+var rgbVis = ndvi.map(function(img) {
+  return img.visualize(visParams);
+});
+
+// Define GIF visualization parameters.
+var gifParams = {
+  'region': StudyArea,
+  'dimensions': 600,
+  'crs': 'EPSG:3857',
+  'framesPerSecond': 2
+};
+
+// Print the GIF URL to the console.
+print(rgbVis.getVideoThumbURL(gifParams));
+```
+
+Based on the animation, what do you think is the explanation for the differences between mean and median and the blurriness in the sd images above?
+
+This is because the images include clouds and cloud shadows. Let's remove the clouds through the development and application of a function.
+
+Let's mask out the clouds and cloud shadows and recalculate the standard deviation
+
+#### 8. Mask clouds and cloud shadows in image collection
+We will use a function to mask clouds and cloud shadows from Landsat 8 (https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T2_SR). The function uses data on the QA layer that comes with Landsat for that purpose.
+
+```{JavaScript}
+//Mask clouds and recalculate SD
+var maskL8sr = function (image) {// it can also be: function maskL8sr(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+                 .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+  
+var l8SA_2020ndviMskd = l8SA_2020ndvi.map(maskL8sr);
+
+var l8SA_2020ndviMskdSD = l8SA_2020ndviMskd.reduce(ee.Reducer.stdDev());  
+  
+Map.addLayer(l8SA_2020ndviMskdSD,
+{bands: ['B5_stdDev', 'B4_stdDev', 'B3_stdDev'], min: 500, max: 3000, gamma: 2}, 'l8sdmskd');
+Map.centerObject(StudyArea, 11);
+```
+
+How does this new standard deviation image compare with the previous one?
+
+#### 9. Plot time series
+Let's collect five points, each one representing contrasting land cover types. For that purpose, click on the "add a marker" option in the map window  (blue circle 1 below). Then click on the "satellite" button (blue circle 2 below). 
+
+Zoom into an area representing a crop, enough to see the contrast between the the cropped area and and its surroundings. Make sure that the area of interest is relatively homogeneous. Click approximately on the center of it. It will produce a pin (blue circle 3 below) and a new imported variable with the name "geometry" that you can see both in the "geometry imports" button (blue circle 4 below) and as a new import on the top of your script. 
+
+Assign to the geometry the name "Crop" in the corresponding line on the top of your screen (the same way you did for the study area above) (blue circle 5 in the figure below).
+
+Go to the "Geometry imports" button and click on "+ new layer" (blue circle 6 below). Then zoom into an area tipifying forest and click on the center. Change the name of the point the same way as it was described above.
+
+Repeat the process to collect a point in areas representing water, asphalt and grass.
+
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig3path)
+```
+
+Let's retrieve a slightly longer time period in the temporal filter. For that purpose, let's modify the dates selected for the temporal filtering at the beginning of the script to span between Jan 2015 and Dec 2020. Let's also comment the previous animation (otherwise it will exceed memory allocation allowed for users and produce an error).
+
+This is the line to modify in the temporal filter. DO NOT COPY AND PASTE THIS, INSTEAD, MODIFY THE LINE OF CODE WRITTEN FOR THE TEMPORAL FILTERING
+```{JavaScript}
+var l8SA_2020 = l8_StudyArea.filterDate('2015-01-01', '2020-12-31');
+```
+
+This is the line to comment.
+```{JavaScript}
+//print(rgbVis.getVideoThumbURL(gifParams));
+```
+
+Let's then plot the ndvi for the whole time period  before and after cloud masking
+```{JavaScript}
+// Create a feature collection with all the points collected
+var lc = ee.FeatureCollection([
+  ee.Feature(Crop, {label: 'Crop'}),
+  ee.Feature(Forest, {label: 'Forest'}),
+  ee.Feature(Water, {label: 'Water'}),
+  ee.Feature(Asphalt, {label: 'Asphalt'}),
+  ee.Feature(Grass, {label: 'Grass'}),
+]);
+
+var chart =
+    ui.Chart.image
+        .seriesByRegion({
+          imageCollection: l8SA_2020ndvi,
+          band: 'NDVI',
+          regions: lc,
+          reducer: ee.Reducer.mean(),
+          scale: 90,
+          seriesProperty: 'label',
+          xProperty: 'system:time_start'
+        })
+        .setOptions({
+          title: 'Average NDVI Value by Date with clouds',
+          hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+          vAxis: {
+            title: 'NDVI per land cover',
+            titleTextStyle: {italic: false, bold: true}
+          },
+          lineWidth: 5,
+          colors: ['b3de69', 'bc80bd', 'f1e2cc', 'B3CDE3', 'BEBADA'],
+        });
+print(chart);
+
+var chartmskd =
+    ui.Chart.image
+        .seriesByRegion({
+          imageCollection: l8SA_2020ndviMskd,
+          band: 'NDVI',
+          regions: lc,
+          reducer: ee.Reducer.mean(),
+          scale: 90,
+          seriesProperty: 'label',
+          xProperty: 'system:time_start'
+        })
+        .setOptions({
+          title: 'Average NDVI Value by Date wihout clouds',
+          hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+          vAxis: {
+            title: 'NDVI per land cover',
+            titleTextStyle: {italic: false, bold: true}
+          },
+          lineWidth: 5,
+          colors: ['b3de69', 'bc80bd', 'f1e2cc', 'B3CDE3', 'BEBADA'],
+        });
+print(chartmskd);
+```
+
+Click on the symbol with the square and diagonal arrow on the top right of the figure (see image below). It will open the graph in a new tab. You can download either the data as a spreadsheet (csv) or as an image (SVG or PNG). 
+
+You can see the rich information that can be obtained by considering the temporal dimension of remote sensing. Later on we will see how to exploit this potential for image classification and change assessment.
+
+### Homework
+Select a study area that you have considered for your final project. Produce a spatial filter to a manageable size and a temporal filter for a period between Jan 2015 and Dec 2020. Then select 4-5 ground features that you expect to have contrasting temporal changes in reflectance and plot their temporal profile in NDVI using the ui.chart() function before and after masking clouds and cloud shadows and save  both plots as PNG images. 
+
+Fill up this form for your report: https://forms.office.com/Pages/ResponsePage.aspx?id=74FucSK1c0SOMRC9Asz25dmnkCS0Q29AsedCc0cCybpUREhTTlFSQTRKSkhRWjdXQVlLWTNITE9HTS4u 
+

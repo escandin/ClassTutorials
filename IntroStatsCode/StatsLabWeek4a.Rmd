@@ -1,0 +1,310 @@
+---
+title: 'Spatial Analysis. Lab Week 4: Sampling'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Feb 15 2023
+
+## Goals
+At the end of this lab, students will know:
+
+- how to characterize the four moments of a probability distribution graphically and numerically
+
+- how to evaluate the assumption of normality in a distribution
+
+- how to quantify the probability associated to different values and ranges of normally distributed random variables.
+
+- how to use the functions pnorm, dnorm, qnorm and rnorm in R.
+
+- how similar functions can be used to represent other probabilty distributions beyond normal.
+
+- how to demonstrate the central limit theorem empirically.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+#### Setting up the environment
+Load required libraries. If a library is not found, you should use the function install.packages("packageName"). Packages need only to be installed once.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module4_sampling")
+setwd(wd)
+dir()
+library(moments)
+```
+
+#### Background
+The base package in R has functions that enable to represent different characteristics of a probability density function. For normal distributions, those functions are pnorm, dnorm, qnorm and rnorm. The figure below represents what aspects of the distribution each one of these functions represent (https://r-coder.com/normal-distribution-r/):
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+#### Excercise 1:
+##### 1.1 Exploring the properties of a normal distribution
+The following dataset shows the age of 50 randomly selected NFL players.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+age=c(27, 22, 33, 29, 25, 27, 26, 25, 14, 36, 37, 29, 20, 19, 28, 30, 33, 19, 20, 33, 37, 26, 29, 25, 28, 
+      25, 31, 23, 27, 21, 26, 25, 21, 29, 24, 26, 27, 16, 20, 31, 20, 14, 33, 23, 18, 21, 31, 21, 28, 32)
+```
+
+Let's represent this as a histogram
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hist(age)
+```
+
+Express the histogram as probabilities. Then produce a probability density distribution and overlay it on the histogram
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+m<-mean(age)
+std<-sd(age)
+hist(age, density=10, breaks=5, prob=TRUE, 
+     xlab="age", ylim=c(0, 0.1), 
+     main="normal curve over histogram")
+curve(dnorm(x, mean=m, sd=std), 
+      col="darkblue", lwd=2, add=TRUE, yaxt="n")
+```
+
+Does this look like a normal distribution? Let's evaluate this quantitatively based on the four moments
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mean(age)
+median(age)
+skewness(age)
+kurtosis(age)
+```
+
+A QQ plot is a graphical method to compare the distributon of the quantiles of a sampled data with the quantiles of a given theoretical distribution. 
+
+What does a Normal Quantile Plot (or Q-Q plot) show in general?
+
+What indicates a perfect normality in this graph? 
+
+Looking at this, do you think our data values are normally distributed about the Mean?
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+qqnorm(age, pch = 1, frame = FALSE)
+qqline(age, col = "steelblue", lwd = 2)
+```
+
+We can safely assume (and observe) that this distribution makes a normal curve. And we know that if it makes a normal curve, it should follow the ’68-95-99.7 Empirical Rule’. Let us observe.
+
+Out of the 50 observations, how many age values fall within a range of one STD from the Mean? What % does it make?
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+onesd=(which(age>mean(age)-sd(age) & age<mean(age)+sd(age)))
+length(onesd)/length(age)
+```
+
+What proportion (percentage) of the data values fall within a two STD range? How many values?
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+twosd=(which(age>mean(age)-2*sd(age) & age<mean(age)+2*sd(age)))
+length(twosd)/length(age)
+```
+
+Do all the values fall within a distance of three STD from the Mean?
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+threesd=(which(age>mean(age)-3*sd(age) & age<mean(age)+3*sd(age)))
+length(threesd)/length(age)
+```
+
+Based on these results, do you think this distribution supports the well-established (68-95-99.7 empirical rule)? 
+
+##### 1.2 Estimating probabilities for observed data values
+We will use the exercise introduced above to calculate probabilities associated to different ranges of observed data. For this purpose we use the function pnorm() (see figure above) that calculates the cummulative probability up to a certain value of the sampled data assuming a normal distributon with given mmean and stadard deviation.
+
+What is the probability that a randomly selected NFL player (from our Age data above) is older than 32 years?
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+1-pnorm(32, mean(age), sd(age))
+```
+
+What is the probability that a randomly selected NFL player (from our data) is younger than 18 years? 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pnorm(18, mean(age), sd(age))
+```
+
+What is the probability that a randomly selected NFL player is between 24 and 30 years? 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pnorm(30, mean(age), sd(age))-pnorm(24, mean(age), sd(age))
+```
+
+
+#### Excercise 2: Estimate expected value(s) for different probability levels
+Under some circumstances it is required to estimate expected values for the observed random variable given a known probability level. For this purpose, we use the function qnorm in R (see figure above). Let's introduce an example.
+
+If average number of departing flights from PHL per day is 80 with a standard deviation of 5 flights, answer the following questions:
+
+2.1. How many flights would be leaving Philly if the probability of departing flights for a randomly selected day is 0.72? 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+qnorm(0.72, 80, 5)
+```
+
+2.2. How many flights would correspond to the 80th percentile?
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+qnorm(0.8, 80, 5)
+```
+
+2.3. How many flights correspond to the top 90th percentile? Show the labeled curve. 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+qnorm(0.9, 80, 5)
+```
+
+
+#### Excercise 3: Central Limit Theorem (CLT)
+The CLT states that the means of consequtive samples of the same size from anu given distribution will distribute normally. This theorem has important implications for many of the statistical methods we will study later in the semester.
+
+To demonstrate empirically the validity of the CLT, we will produce synthetic data. Synthetic data is data produced artificially rather than sampled from real events. Synthetic data is useful to validate mathematical models or to demonstrate the applicability and/or generalization of different methods.
+
+We will use the data provided in exercise 1 as the base information to produce synthetic data that will simulate other samples collected from all NFL players, assuming that the sampled data represents well the distributon of the population. For this purpose we will use the function (rnorm). The function produces random observations collected from a normal probability distribution.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+samp=round(rnorm(length(age), mean(age), sd(age)))
+```
+
+Let's produce a histogram with those samples to check whether they follow a normal distribution
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#prob=dnorm(samp, mean(age), sd(age))
+hist(samp, density=10, breaks=5, prob=TRUE, 
+     xlab="age", ylim=c(0, 0.1), 
+     main="normal curve over histogram")
+curve(dnorm(x, mean=mean(samp), sd=sd(samp)), 
+      col="darkblue", lwd=2, add=TRUE, yaxt="n")
+```
+
+Let's calculate some statistics from this sample
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+meansamp=mean(samp)
+```
+ 
+The central limit states that if we sample a population repeated times and calculate the mean for each sample, then the means will be distributed normally. To demonstrate this, we will need to produce a certain number of samples and store the mean in a separate vector from all iterations. We will do this by entering some of the code shown above in a loop.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+for (i in 1:100){
+  samp=round(rnorm(length(age), mean(age), sd(age)))
+  meansamp=mean(samp)
+  if (i==1){
+    means=meansamp
+  }else{
+    means=c(means, meansamp) # mean probabilty for all 100 samples
+    }
+}
+```
+
+Do the means distribute normally?
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hist(means)
+qqnorm(means, pch = 1, frame = FALSE)
+qqline(means, col = "steelblue", lwd = 2)
+```
+
+The case above demonstrates that the means of random samples from a normal distribution, also distribute randomly. The CLT states that regardless of the probability distribution of random samples, the distribution of their means is always normal. Let's demonstrate this empirically using sampled data from a population that is assumed to follow an uniform probability distribution.
+
+The uniform distribution is a distribution where all values have the same probability to occur.
+
+Let's produce some synthetic random data from a uniform distribution
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+samp=round(runif(length(age), 0.5, 2.5), digits=2)
+hist(samp)
+```
+
+Do the means from repeated samples collected from a uniform population also distribute normally? 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+for (i in 1:100){
+  samp=round(runif(100, 0.5, 2.5), digits=2)
+  meansamp=mean(samp)
+  if (i==1){
+    means=meansamp
+  }else{
+    means=c(means, meansamp) # mean probabilty for all 100 samples
+  }
+}
+
+hist(means)
+qqnorm(means, pch = 1, frame = FALSE)
+qqline(means, col = "steelblue", lwd = 2)
+```
+
+## Lab deliverables
+
+Copy and paste the questions below in a word document. Then record your answers in the respective section.
+
+#### Problem 1
+
+Assume that the vector below represents the height (in m) of a sample of trees within the Temple Ambler Forest Observatory at Ambler campus:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+height=c(40, 39, 32, 29, 26, 55, 15, 62, 28, 17, 60, 53, 42, 37, 24, 17, 41, 30, 26, 41, 32, 12, 32, 18, 28, 40, 8, 27, 38, 42, 29, 28, 23, 58, 30, 37, 35, 53, 37, 41, 31, 46, 37, 37, 52, 23, 37, 27, 43, 44)
+```
+
+1.1. Produce the following two graphs and include them in your report:
+
+a. a probability histogram based on these measurements. Then produce a probability density distribution and overlay it on the histogram.
+
+b. a normal Quantile Plot (Q-Q plot) and overlay it with a Q-Q line. 
+
+c. to what extent do graphs a. and b. suggest that the data is normally distributed? Please justify your answer.
+
+
+1.2. Based on this data, respond to the questions below. 
+
+Paste after your answers the line of code used to obtain the result in R
+
+a. What is the probability that a randomly selected tree (from our height data above) is higher than 50 m?
+
+b. What is the probability that a randomly selected tree is smaller than 20 m? 
+
+c. What is the probability that a randomly selected tree is between 18 and 30 m? 
+
+#### Problem 2
+Suppose the weight of a population of aye-aye is normally distributed with a mean of 5 lbs  and a standard deviation of 1.5 lbs. 
+
+Approximately what percentage of this species of otters are expected to weight between 2 and 4 lbs? 
+
+Paste after your answers the line of code used to obtain the result in R
+
+#### Problem 3
+
+The average commute time to Temple University from my home is 35 mins with a standard deviation of 10 mins. Looking at the records of my 1000 past commutes, I found that my commute time is normally distributed.
+
+Answer the questions below and paste the line of code you used to obtain your answer:
+
+2.1.	What is the probability that in a random day I can get to my office from home in less than 25 mins? 
+
+2.2.	What is the inter quartile range of my commute time? 
+
+2.3.	What is the probability that I will take to arrive to my office (on a random day) between 25 and 40 minutes?
+
+#### Problem 4 (required for graduate students, optional for an extra point for undergraduate students)
+
+Adapt excercise 3 to demonstrate empirically whether random samples of 100 observations each collected from a gamma distribution with a shape = 2 and scale =1 (check ?rgamma in R for more details) distribute normally.
+
+4.1. Paste the code that you used for the demonstration
+
+4.2. add an image of the histogram obtained from one of the gammma samples
+
+4.3. add an image of the qqplot and the qqline plot for the vector of means
+

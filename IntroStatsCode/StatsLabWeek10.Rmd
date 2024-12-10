@@ -1,0 +1,309 @@
+---
+title: 'Spatial Analysis. Lab Week 10: Analysis of Variance (ANOVA)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+fig2path=paste(wd, "Fig2Lab5.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Lab due
+March 29 2023
+
+## Goal
+At the end of this lab, students will know:
+
+-How to visualize differences in the response for different sample groups
+
+-How to test those differences through the application of an analysis of variance
+
+-How to implement an ANOVA in R and to produce post-hoc tests.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+### Background
+
+Please review the class materials for background on how to perform an ANOVA test
+
+### Reference data
+For this lab we will use survey data from the American National Election Studies (ANES) and data from the UN-HDI. 
+
+You can download the .csv file associated to these datasets from the module "Datasets" in canvas. Please read the description and access the links to become familiar with the characteristics of the datasets.
+
+### Exercise 1
+Please download the file named "Class10_ANOVA_Example.csv" from module 10 in canvas. The data corresponds to a study of educational levels in three cities (based on a sample of census tracts from each city) showing the  percentages of adult residents with at least a Bachelor’s degree (These values are census-tract level averages). 
+
+Based on these samples, can we assert that the overall populations of the three cities have discernibly different rates of residents with higher education? 
+
+#### Part 1: Carry out a one-way ANOVA test manually to answer this question. Complete/answer the following questions.
+
+##### a. state question
+Are there any differences in the percentages of adult residents with at least a Bachelor’s degree between the three cities?
+
+#####  b. State null and alternative hypotheses
+H0: BDB = BDP = BDLA
+
+HA: BDB != BDP != BDLA 
+
+##### c. Identify variables
+Variable defining the groups: city (Boston, LA, Philadelphia)
+Variable defining the values: Bachelor's degree
+
+##### d. Upload database and explore it
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module10_ANOVA"
+setwd(wd)
+dbe1=read.csv("Class10_ANOVA_Example.csv")
+summary(dbe1)
+```
+
+##### e. Build database (Remove NAs!)
+All variables are included in the db so this step is not needed
+
+##### f. Plot variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+boxplot(dbe1)
+```
+
+##### g. Perform test
+Since we are going to perform a manual test, these are the statistics that we need to estimate:
+I.	SSB
+II.	SSW
+III.dfB, dfW
+IV.	MSB, MSW
+V.	F
+
+Let's first convert the data from wide to long to facilitate the calculations
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(tidyr)
+dbe1long=gather(dbe1, city, Bdeg, c("Philadelphia", "Los.Angeles", "Boston"))
+```
+
+I. SSB. We need to calculate the global mean and the mean for each group. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+globalmean=mean(dbe1long$Bdeg, na.rm=TRUE)
+Bostonmean=mean(dbe1long$Bdeg[dbe1long$city=="Boston"], na.rm=TRUE)
+Boston_n=length(na.omit(dbe1long$Bdeg[dbe1long$city=="Boston"]))
+  
+Phillymean=mean(dbe1long$Bdeg[dbe1long$city=="Philadelphia"], na.rm=TRUE)
+Philly_n=length(na.omit(dbe1long$Bdeg[dbe1long$city=="Philadelphia"]))
+  
+LAmean=mean(dbe1long$Bdeg[dbe1long$city=="Los.Angeles"], na.rm=TRUE)
+LA_n=length(na.omit(dbe1long$Bdeg[dbe1long$city=="Los.Angeles"]))
+  
+SSB=Boston_n*(Bostonmean-globalmean)^2+Philly_n*(Phillymean-globalmean)^2+LA_n*(LAmean-globalmean)^2
+```
+
+II.	SSW
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+SSW=sum((na.omit(dbe1long$Bdeg[dbe1long$city=="Boston"])-Bostonmean)^2)+
+    sum((na.omit(dbe1long$Bdeg[dbe1long$city=="Philadelphia"])-Phillymean)^2)+
+    sum((na.omit(dbe1long$Bdeg[dbe1long$city=="Los.Angeles"])-LAmean)^2)
+```
+
+III. dfB, dfW
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+  # III.	 DFbetween
+  dfB=length(unique(dbe1long$city))-1
+  
+  # IV.	DFwithin
+  dfW=length(na.omit(dbe1long$Bdeg))-length(unique(dbe1long$city))
+```  
+
+IV.	MSB, MSW
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+MSB=SSB/dfB
+
+MSW=SSW/dfW
+```
+
+V.	F
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+f=MSB/MSW
+```
+  
+##### h.	Find the p-value for your F-score. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+1-pf(f, dfB, dfW)
+
+# or in percentage
+(1-pf(f, dfB, dfW))*100
+```
+ 
+##### i.	Interpret your decision in terms of the RQ and hypotheses and conclude. 
+According to the data, there is a 0.12% probability that the educational level in the three cities is the same.
+
+#### Part 2: perform the analysis using the appropriate function in R
+For that purpose, we use the aov() function
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anvar=aov(Bdeg~city, data=dbe1long)
+summary(anvar)
+```
+
+To evaluate what are the specific differences between the groups, we perform a post-hoc test. For this purpose we will perform a Tukey test and a pairwise t test
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+TukeyHSD(anvar)  
+  
+# Alternatively: https://stats.oarc.ucla.edu/r/faq/how-can-i-do-post-hoc-pairwise-comparisons-in-r/
+pairwise.t.test(dbe1long$Bdeg, dbe1long$city, p.adj = "bonf")
+pairwise.t.test(dbe1long$Bdeg, dbe1long$city, p.adj = "holm")
+```
+
+### Exercise 2
+Let's use the data from ANES to assess whether the ratings assigned to Trump (‘fttrump’) vary among groups with diffferent points of view about the role of government to reduce income differences between poor and rich people ('richpoor2').
+
+1. Let's upload the database and explore the variables of interest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/Datasets")
+setwd(wd)
+anes=read.csv("anes_2020ets.csv")
+
+fttrump=anes$fttrump
+summary(fttrump)
+  
+richpoor=anes$richpoor2
+summary(richpoor)
+```
+
+You can see that there are values that are out of range compared to the possible values that the variables can adopt according to the definition of those variables (see ANES questionnaire in canvas). Let's convert those values into NAs
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+fttrump[fttrump>100]=NA
+summary(fttrump)
+  
+richpoor[richpoor>5]=NA
+summary(richpoor)
+```
+
+2. Build a data subset with the variables of interest. We need to remove NAs and also convert the data associated to the different groups into a factor.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dbe2=data.frame(cbind(fttrump, richpoor))
+nrow(dbe2)
+  
+dbe2=subset(dbe2, complete.cases(dbe2))
+nrow(dbe2)
+
+dbe2$richpoor=as.factor(dbe2$richpoor)
+```
+
+3. Plot the data. In this case we will use the function ggplot because the data format is long instead of wide as the first example.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ggplot(dbe2, aes(x = richpoor, y = fttrump)) +
+    geom_boxplot()
+```
+
+4. Question: are there any differences in the level of favoritism towards Trump among groups of people with different opinions about the role of government to reduce income inequalities?
+
+5. Hypotheses
+
+H0:TrumpRatingsG1 == TrumpRatingsG2 == ... ==TrumpratingsG5
+
+H1:TrumpRatingsG1 != TrumpRatingsG2 != ... !=TrumpratingsG5
+
+6. Test
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anvare2=aov(fttrump~richpoor, data=dbe2)
+summary(anvare2)
+```
+
+7. Post-hoc test
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+TukeyHSD(anvare2) 
+pairwise.t.test(dbe2$fttrump, dbe2$richpoor, p.adj = "bonf")
+pairwise.t.test(dbe2$fttrump, dbe2$richpoor, p.adj = "holm")
+```
+
+8. Conclusions: we will evaluate the conclusions in class.
+
+### Exercise 3
+Let’s use UNHDI data file to evaluate if the average years in schooling ("education level") different among different regions of the world ("Regional indicator")?
+
+1. Let's upload the database and explore the variables of interest
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+hdi=read.csv("UNHDI_2020_w_Happiness.csv")
+names(hdi)
+
+region=hdi$Regional.indicator
+schooling=hdi$Expected.years.of.schooling
+  
+head(region)
+unique(region)
+  
+head(schooling)
+summary(schooling)
+```
+
+2. Build a data subset with the variables of interest. We need to remove NAs and also convert the data associated to the different regions into a factor.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dbe3=data.frame(cbind(region,schooling))
+dbe3$schooling=as.numeric(schooling)
+dbe3$region=as.factor(dbe3$region)
+names(dbe3)=c("region", "schooling")
+head(dbe3)
+```  
+
+3. Plot the data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ggplot(dbe3, aes(x = region, y = schooling)) +
+    geom_boxplot()
+```
+
+4. Question: Is there a difference in the average years of schooling among different regions of the world?
+
+5. Hypotheses:
+
+H0: meanR1 == meanR2 == meanR3.... == meanRn
+
+H1: meanR1 != meanR2 != meanR3.... != meanRn
+
+6. Test
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anvare3=aov(schooling~region, data=dbe3)
+summary(anvare3)
+```
+
+7. Post-hoc test
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+TukeyHSD(anvare3) 
+pairwise.t.test(dbe3$schooling, dbe3$region, p.adj = "bonf")
+```
+
+8. Conclusions: we will evaluate the conclusions in class.
+
+### Lab report
+For this lab report, you will be conducting an analysis of variance (ANOVA) test using any of the course data that we’ve worked with so far this semester and present it on Canvas (ANES, UN-HDI, US-census).
+
+If you are an undergraduate student, you are welcome to work with a partner. In that case, please submit one ppt per group including the names of the members in the intro slide.
+
+Preliminaries: First identify one dependent (Y) and one independent (X) variable. You will be using X to explain Y. 
+
+Because this is an ANOVA, X must be a nominal variable with three or more groups/categories. For instance, a variable such as PARTYID in the American National Election Survey is suitable (it has ten categorical values, which I would probably simplify by recoding). Y must be continuous (age works, so do all the feeling thermometers). So if I used these, I’d be testing whether respondents of various parties have the same average age.
+
+The deliverable for this assignment is a slide presentation of the analysis uploaded to module 10 in canvas.
+
+The ppt should have the code associated with each one of the steps illustrated in  exercises 2 and 3 above. In addition to the code, make sure to add the following information in the appropriate section:
+
+1. The boxplot produced from the data
+
+2. The results of the anova test, including your interpretation
+
+3. The results of the ad-hoc test, including your interpretation
+

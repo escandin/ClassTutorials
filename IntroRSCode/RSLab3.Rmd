@@ -1,0 +1,158 @@
+---
+title: 'Remote Sensing Lab 3: Satellite data resolution
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+## Lab due
+September 18 2024
+
+## Goals
+1. To learn basic techniques for image cropping, zooming, and pixel aggregation/disaggregation.
+2.	To understand differences in spatial, temporal, spectral and radiometric resolutions between optical satellites
+3.	To understand trade-offs between satellite data under different spatial, temporal, radiometric and spectral resolutions.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+Have fun!
+
+```{r include = FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class3_Resolution/Lab3"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+#library(kableExtra)
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+library(kableExtra)
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Fig2.png", sep="/")
+#fig3path=paste(wd, "Fig3.png", sep="/")
+#fig4path=paste(wd, "Fig2NAIP.png", sep="/")
+#fig5path=paste(wd, "Fig3NAIP.png", sep="/")
+#fig6path=paste(wd, "Fig4.png", sep="/")
+
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+#fig5 = readPNG(fig5path)
+#fig6 = readPNG(fig6path)
+```
+
+## Part A. Downloading images
+
+Reproduce the steps for data downloading described in lab 2 but applied to another images. You will also need to copy the compressed (.tar or .tar.gz).  Here is a summary of the instructions:
+
+1. Go to Earth explorer (http://earthexplorer.usgs.gov). Click on the login link and enter the credentials that you used in class to open an account.
+
+2.	Click on the “Search Criteria” tab, then type “Fairmount Park” in the "Feature Name", select Pennsylvania in the "State"  and then click "Show". Click on the feature with coordinates 39.8934,	-76.6061). This will show a pin in the selected location in the map view.
+	39.9834	-75.2099
+Zoom in to the pin. Then drag the pin with your mouse towards an edge of the park. Click on  other edges until to produce a polygon that covers approximately the area of the park (see figure below).
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+3. Click on the “Data Sets” tab at the top of the search panel. Then on the drop down menu select Aerial Imagery/NAIP and checkmark the option NAIP.
+
+4.	Click on the results tab and locate the NAIP image with an acaquisition date of 2022-05-10. If you click on the "Show Footprint" button, you will see in the map that this is the scene that covers most of the area of the park. 
+
+5.	. Click on the “Download Options”button" at the bottom of the entity (see instructions for lab 2) and download the "Full Resolution" image. The image should download in the default downloads folder in your computer as a compressed file with the name m_3907507_nw_18_060_20220510.ZIP.zip . Your commputer may decompress this image automatically depending on the configuration.
+
+6. Move the compressed file into the working folder that you will specify as setwd() in R as shown in Part B. Also copy the compressed Landsat image that you used for lab 2 and paste it in the working folder. If you don't have access to this image anymore, you can follow the steps described in lab 2 to download it.
+
+## Part B. Data import resampling, alignment and pixel aggregation/disaggregation
+1.Load required libraries and set working directory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(terra)
+#library(rgdal)
+#library(RStoolbox)
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2024Fall/Class3_Resolution/Lab3"
+setwd(wd)
+```
+
+2. Check the names of the files in your working directory. Then reproduce the code from  lab 2 to decompress the image and open it in R as a raster stack. Also open the stack that you produced with the Landsat image downloaded for lab 2
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+untar("LC08_L2SP_014032_20240717_20240723_02_T1.tar")
+tifs <- list.files('.', pattern='.TIF')
+tifs # lists all the files in the working folder with the extension .TIF
+tifBandNames=tifs[c(1, 4:9)] # enter the index position for the bands of interest (bands 1 through 7)
+L8=rast(tifBandNames)
+names(L8)=tifBandNames
+names(L8)
+```
+
+3. Check if the naip image was downloaded as a zip file or if it was already decompressed as a .tif file (this depends on the configuration of your computer). Copy and paste the name of the naip image below to decompress (if necessary) and then open it as a stack in R.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unzip("m_3907507_nw_18_060_20220510.ZIP")
+naip=rast("m_3907507_nw_18_060_20220510.tif") # The tif file for NAIP has all the bands already stacked
+
+L8  # Provides the metadata associated with the downloaded image.
+naip # Provides the metadata associated with the downloaded image.
+
+#plot both images to visualize their extent and resolution
+plotRGB(L8, r = 4, g = 3, b = 2,  stretch = "lin")
+plotRGB(naip, r = 1, g = 2, b = 3, stretch = "lin")
+```
+
+4. Resize the Landsat image to the extent of the NAIP image.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8rsz=crop(L8, naip)
+plotRGB(L8rsz, r = 4, g = 3, b = 2,  stretch = "lin")
+```
+
+5. Aggregate the Landsat image so that the pixel size is approximately equal to the minimum resolution available for MODIS images (~232 m).
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+L8agg=aggregate(L8rsz, fact=8)
+```
+
+6. Plot the NAIP image along with the Landsat image after and before aggregation for the area covered by the extent of the NAIP image. Save the images as pdf. Use the drawExtent() function and the ext argument in the ggRGB function to zoom in into different areas of interest. Modifiy the stretch as needed to improve contrast. You can see stretch options by running ?plotRGB
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8agg, r = 4, g = 3, b = 2, stretch = "hist") # MODIS resolution (simulated)
+plotRGB(L8rsz, r = 4, g = 3, b = 2, stretch = "hist") # Landsat resolution
+plotRGB(naip, r = 1, g = 2, b = 3, stretch = "hist") # NAIP resolution
+```
+
+You can also plot the images with a different but equivalent band combination
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotRGB(L8agg, r = 5, g = 4, b = 3, stretch = "hist") # MODIS resolution (simulated)
+plotRGB(L8rsz, r = 5, g = 4, b = 3, stretch = "hist") # Landsat resolution
+plotRGB(naip, r = 4, g = 3, b = 2, stretch = "hist") # NAIP resolution
+```
+
+7. Save the three graphs as a single pdf file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("VGutierrez_Lab3.pdf")
+  plotRGB(L8agg, r = 5, g = 4, b = 3, stretch = "hist") # MODIS resolution (simulated)
+  plotRGB(L8rsz, r = 5, g = 4, b = 3, stretch = "hist") # Landsat resolution
+  plotRGB(naip, r = 4, g = 3, b = 2, stretch = "hist") # NAIP resolution
+dev.off()
+```
+
+8. Save the images as raster files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+writeRaster(L8agg, filename="MODISres.tif")
+writeRaster(L8rsz, filename="LANDSATres.tif")
+writeRaster(naip, filename="NAIPres.tif")
+```
+
+9. Open the three rasters in QGIS by clicking in the option "Layer" in the main menu, and then on "Add Layer" > "Add Raster Layer...". Browse to the working directory and select the three files saved with the names specified in step 8 and then click on "add".
+
+10. Right click on each image and then select "properties. Change the band numbers to display as RGB, using a natural color band combination (the same as the one used in first set of RGB plots displayed in step 6). 
+
+Zoom in and out of different locations with all three images and interpret the features that are displayed.
+
+Change again the band numbers to match the combination used for the second set of RGB plots displayed in the second part of step 6.
+
+Zoom in out of different locations with all three images again and interpret the features that are displayed. Which band combination is more helpful?
+
+## Lab deliverables
+
+Please provide the information requested in the "Lab3Deliverables.docx" file, available in module 3 in canvas.

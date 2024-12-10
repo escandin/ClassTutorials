@@ -1,0 +1,249 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 11: Model tunning and validation (supervised regression)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goals
+To learn how to tune and validate a supervised machine learning model.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use data from previous labs to assess the most appropriate values for model hyperparameters and then apply them to test data for model selection
+
+Have fun!
+
+### 1.System setup, loading required libraries and files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week12_TunningValid")
+setwd(wd)
+library(tidymodels)
+library(tune)
+library(dials)
+library(workflows)
+library(parsnip)
+library(rsample)
+library(recipes)
+library(yardstick)
+library(ranger)
+
+load(paste0(getwd(),"/refdata.RData"))
+summary(refdata)
+refdata=refdata[, -2] # remove the line that corresponds to ID
+```
+
+### 2.  Split for Training, Validation, and Testing
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+set.seed(123)
+data_split <- initial_split(refdata, prop = 0.8)
+train_data_final <- training(data_split)
+test_data <- testing(data_split)
+```
+
+### 3. Define a Recipe for Preprocessing
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+recipe_agb <- recipe(agb ~ ., data = train_data_final) %>%
+  step_normalize(all_predictors()) %>%
+  step_naomit(all_predictors())
+```
+
+### 4. Define Model Specifications
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# 4.1 Random Forest Model
+# Define the Random Forest model specification with tuning parameters
+rf_spec <- rand_forest(
+  mtry = tune(),        # Number of predictors randomly sampled at each split
+  min_n = tune(),       # Minimum number of data points in a node to make a split
+  trees = tune()        # Number of trees in the forest
+) %>%
+  set_mode("regression") %>%
+  #set_engine("ranger")
+  set_engine("ranger")
+
+# An engine is basically a package that represents an implementation of a machine learning method.
+#You can see what are the engines available for random forest:
+show_engines("rand_forest")
+
+# We select "ranger" for its efficiency and capacity to handle large datasets
+
+# 4.2 Extreme Gradient Boosting Model
+xgb_spec <- boost_tree(
+  trees = tune(),          # Number of trees
+  tree_depth = tune(),     # Maximum depth of each tree
+  learn_rate = tune(),     # Learning rate
+  loss_reduction = tune(), # Minimum reduction in loss for a split
+  sample_size = tune(),    # Fraction of observations to sample
+  mtry = tune()            # Number of predictors to randomly sample at each split
+) %>%
+  set_mode("regression") %>%
+  set_engine("xgboost") 
+
+# 4.3 Neural Network Model
+nn_spec <- mlp(hidden_units = tune(), penalty = tune(), epochs = tune()) %>%
+  set_mode("regression") %>%
+  set_engine("nnet")
+```
+
+### 5. Create Workflows
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Create workflows for each model
+rf_workflow <- workflow() %>%
+  add_model(rf_spec) %>%
+  add_recipe(recipe_agb)
+
+xgb_workflow <- workflow() %>%
+  add_model(xgb_spec) %>%
+  add_recipe(recipe_agb)
+
+nn_workflow <- workflow() %>%
+  add_model(nn_spec) %>%
+  add_recipe(recipe_agb)
+```
+
+### 6. Set Up K-Fold Cross-Validation
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+set.seed(123)
+cv_folds <- vfold_cv(train_data_final, v = 5)
+```
+
+### 7. Define Tuning Grids for Each Model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rf_grid <- grid_random(finalize(mtry(), train_data_final), min_n(), trees(), size = 20)
+
+# Define the tuning grid for Random Forest
+rf_grid <- grid_random(
+  mtry(range = c(2, 10)),      # Limits mtry between 2 and 10
+  min_n(range = c(5, 15)),     # Limits min_n between 5 and 15
+  trees(range = c(100, 1000)), # Limits trees between 100 and 1000
+  size = 20
+)
+
+# You can instead use the function to test all possible combinations of paraeters but this would take way longer
+# rf_grid <- grid_regular(
+#   mtry(range = c(2, 10)),  # Divides mtry into a specified number of levels
+#   trees(range = c(50, 500)),
+#   min_n(range = c(2, 15)),
+#   levels = 5               # Divides each parameter range into 5 levels
+# )
+
+xgb_grid <- grid_random(
+  finalize(mtry(), train_data_final), 
+  trees(),
+  tree_depth(),
+  learn_rate(),
+  loss_reduction(),
+  sample_prop(),  # Use sample_size() to match xgb_spec
+  size = 20
+)
+
+nn_grid <- grid_random(hidden_units(), penalty(), epochs(), size = 20)
+```
+
+### 8. Tune Models Using Cross-Validation
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# 8.1 Tune Random Forest
+set.seed(123)
+rf_tuned <- tune_grid(
+  rf_workflow,
+  resamples = cv_folds,
+  grid = rf_grid,
+  metrics = metric_set(rmse, rsq)
+)
+
+# 8.2 Tune Extreme Gradient Boosting
+set.seed(123)
+xgb_tuned <- tune_grid(
+  xgb_workflow,
+  resamples = cv_folds,
+  grid = xgb_grid,
+  metrics = metric_set(rmse, rsq)
+)
+
+#8.3 Tune Neural Network
+set.seed(123)
+nn_tuned <- tune_grid(
+  nn_workflow,
+  resamples = cv_folds,
+  grid = nn_grid,
+  metrics = metric_set(rmse, rsq)
+)
+```
+
+
+### 9. Select the Best Hyperparameters Based on balanced accuracy
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+show_best(rf_tuned, metric="rmse") # this shows the top 5 models
+rf_best <- select_best(rf_tuned, metric="rmse") # this selects the very best model
+rf_best_simp <- select_by_one_std_err(rf_tuned, metric="rmse", min_n)
+
+show_best(xgb_tuned, metric="rmse") 
+xgb_best <- select_best(xgb_tuned, metric="rmse")
+
+show_best(nn_tuned, metric="rmse")
+nn_best <- select_best(nn_tuned, metric="rmse")
+```
+
+### 10. Finalize the Workflows with Optimal Hyperparameters
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rf_workflow <- finalize_workflow(rf_workflow, rf_best)
+xgb_workflow <- finalize_workflow(xgb_workflow, xgb_best)
+nn_workflow <- finalize_workflow(nn_workflow, nn_best)
+```
+
+# Step 11: Fit Final Models on Training Data and Evaluate on Test Data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Random Forest
+rf_final <- rf_workflow %>%
+  last_fit(data_split)
+rf_metrics <- rf_final %>%
+  collect_metrics()
+
+# Extreme Gradient Boosting
+xgb_final <- xgb_workflow %>%
+  last_fit(data_split)
+xgb_metrics <- xgb_final %>%
+  collect_metrics()
+
+# Neural Network
+nn_final <- nn_workflow %>%
+  last_fit(data_split)
+nn_metrics <- nn_final %>%
+  collect_metrics()
+```
+
+### 12. Display metrics for each model, compare Model Performance and select best model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rf_metrics
+xgb_metrics
+nn_metrics
+```
+
+#### Lab report (due on Nov 19th)
+Adapt the code illustrated today to identify suitable values for hyperparameters associated with the application of the three models for the data in your final project. 
+
+Perform an accuracy assessment for both algorithms using the test set and report your results. Based on your results, explain what algorithm produces the best performance.

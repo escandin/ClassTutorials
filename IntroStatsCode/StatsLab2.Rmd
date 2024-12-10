@@ -1,0 +1,245 @@
+---
+title: 'Spatial Analysis. Lab Week 2: Descriptive statistics'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "rstudio_session_4pane_layout.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Feb 01 2023
+
+## Goals
+
+To learn how to download and format data associated to variables from the US census in R
+
+To learn how to represent the characteristics of data graphically and through summary statistics
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+
+#### Setting up the environment
+The code below sets up the working directory and also loads the required libraries. A library is a special type of object in R that stores a series of functions to enhance the capabilities of the software to do certain types of analysis: https://www.youtube.com/watch?v=0YhJxJZOWBw 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module2_Visualization")
+setwd(wd)
+dir()
+library(tidycensus)
+library(mapview)
+library(tidyverse)
+```
+
+#### Download census data
+The census bureau provides two types of data. The decennial dataset corresponds to data collected for the entire US population every 10 years. The American Community Survey provides data for a larger number of variables and for shorter periods but it is based on a sample. For the purpose of the purpose of this lab, we will use the American Commmunity Survey Dataset.
+
+We will use the tidycensus package to download US census data. Some of the description and code is obtained from here: http://walker-data.com/umich-workshop/census-data-in-r/slides/#7 . And also from here: https://rpubs.com/tylersimko/tutorial_census 
+
+To use tidycensus, you will need a Census API key. Visit https://api.census.gov/data/key_signup.html to request a key, then activate the key from the link in your email.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+census_api_key("YOUR API KEY GOES HERE", install = TRUE)
+readRenviron("~/.Renviron")
+```
+
+To see the variables available to you in a particular survey, you can use the load_variables() function. The function takes arguments for the year you are interested in, the survey (Census or ACS). You can also find these lists on the Census website (https://api.census.gov/data/2019/acs/acs5/variables.html) on individual pages for each survey like this for the 2019 ACS - https://www.census.gov/data/developers/data-sets/acs-5year.html ). 
+
+
+Let’s look at all available variables from the decenial census for 2020:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+acs2020 <- load_variables("2020", "acs5", cache = TRUE)
+View(acs2020)
+```
+
+Let's visualize the data:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tract_income  <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001", # Household income
+  state = "PA", geometry=TRUE)
+View(county_income)
+class(county_income)
+```
+
+Notice the object is a spatial datatypes. Working with spatial datasets is beyond the scope of this course but it is useful for map visualization.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mapview(tract_income, zcol = "estimate")
+```
+
+You can also download more than one variable
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tract_var <- get_acs(
+  geography = "tract", 
+  variables = c("B19013_001", # Household income
+                "B01003_001"), # Total population
+  state = "PA", geometry=TRUE)
+```
+
+#### Produce and format a dataframe with the downloaded data
+Let's convert the data for the two downloaded variables into a dataframe
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+data_frame <- as.data.frame(tract_var)
+View(data_frame)
+names(data_frame)
+```
+
+Notice the name of the variables associated to the data frame. moe represents the margin of error or the confidence associated to the variable "estimates". We will learn omre about moe later in the semester. The variable geometry contains the information to represent each variable spatially. Since we don't need those variables for now, we will reomve them from the dataframe:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+data_frame=data_frame[,-c(5,6)] # Remove unneeded column referring to the margin of error
+names(data_frame)
+```
+
+You can notice that the format of the table is not the best for the analysis. Each census tract has two rows; one for the first variable and the second for the second variable. This is what is called a long format. Let's reformat the dataframe so that each county just appear once and the value for each variable appears in its own column. For that purpose we need to convert the data frame into a tibble
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datatibble=as_tibble(data_frame)
+df.wide <- pivot_wider(datatibble, names_from = variable, values_from = estimate) 
+View (df.wide)
+```
+
+Let's assign a more intuitive name to the variables. For that purpose, let's make sure that the names are assigned to the appropriate code:
+Household income= "B19013_001", Population="B02001_002"
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(df.wide)
+names(df.wide)[c(3:4)]=c("Population", "HHincome")
+```
+
+Now that we have formatted the dataframe, let's take a look at its properties
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(df.wide)
+str(df.wide)
+nrow(df.wide)
+ncol(df.wide)
+```
+
+You notice that there are some observations that appear as NAs for HHincome. NA means "not-a-number". We will learn how to deal with NAs later in the semester. For now, let's remove any observation that has an NA in at least one of the variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+df.wide1=subset(df.wide, complete.cases(df.wide))
+nrow(df.wide1)
+summary(df.wide1)
+```
+
+Let's create a new variable that represents HHincome by Income Group: low (<52,200), medium (52,200-156,600), high (>156,600)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+df.wide1$IC=rep(NA, nrow(df.wide1)) # create a new variable with NAs in all observations
+
+# Then populate the values of that column using categorical variables representing low, medium, and high income
+df.wide1$IC[which(df.wide1$HHincome<52200)]="low"
+df.wide1$IC[which(df.wide1$HHincome>52200 & df.wide1$HHincome<156600)]="medium"
+df.wide1$IC[which(df.wide1$HHincome>156600)]="high"
+summary(df.wide1$IC)
+head(df.wide1$IC)
+```
+
+Let's calculate the number of observations per class
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+table(df.wide1$IC)
+freqXincome=data.frame(table(df.wide1$IC))
+freqXincome
+names(freqXincome)=c("IC", "Frequency")
+```
+
+#### Represent the data graphically
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Pie chart
+?pie
+pie(freqXincome$Frequency)
+pie(freqXincome$Frequency, labels=freqXincome$IC,  main="Blocks per income category")
+
+# Barplot
+?barplot
+barplot(freqXincome$Frequency)
+barplot(freqXincome$Frequency, names.arg = freqXincome$IC, main="Blocks per income category")
+
+# Barplot as percentage represented by each IC with respect to all census tracts?
+sum(freqXincome$Frequency)
+freqXincome$prop=freqXincome$Frequency*100/sum(freqXincome$Frequency)
+
+barplot(freqXincome$prop, names.arg = freqXincome$IC, main="Percentage of blocks per income category", 
+        xlab="income caegory", ylab="%",)
+freqXincome$prop
+
+# Histogram
+?hist
+hist(df.wide1$HHincome)
+hist(df.wide1$Population)
+```
+
+Let's save all these graphs as a pdf in the working directory
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pdf("descGraphs.pdf")
+  pie(freqXincome$Frequency, labels=freqXincome$IC,  main="Blocks per income category")
+  barplot(freqXincome$Frequency, names.arg = freqXincome$IC, main="Blocks per income category")
+  hist(df.wide1$HHincome)
+dev.off()
+```
+
+
+#### Produce measures of central tendency and variabily
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Measures of central tendency: add median, mode!!!!
+mean(df.wide1$Population) 
+mean(df.wide1$Population, trim=5)# trimmed mean by removing 5%
+median(df.wide1$Population)
+
+# There is no built in function to calculate the mode but it is possible to enter a custom function and then use it to calculate the mode: https://stackoverflow.com/questions/2547402/how-to-find-the-statistical-mode
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+Mode(df.wide1$Population)
+
+# Measures of variability
+range(df.wide1$Population) # produces the minimum and maximum values
+min(df.wide1$Population)
+max(df.wide1$Population)
+
+sd(df.wide1$Population)
+IQR(df.wide1$Population) # produces the value of an interquartile range
+
+# Boxplot for population
+boxplot(df.wide1$Population)
+
+# Boxplot for population per income bracket
+boxplot(df.wide1$Population~df.wide1$IC)
+
+pdf("boxplot.pdf")
+  boxplot(df.wide1$Population~df.wide1$IC, main="Population per income category",ylab="Population")
+dev.off()
+```
+
+## Lab instructions
+1. Download and format data from the acs at the census tract level for a state of your preference referent to total population, household income (same variables downloaded here) and also the data labeled as ("Estimate!!Total:!!White alone"total white population").
+
+2. Create a new variable with the proportion of the total population that is white with respect to the total population per census tract (check code from previous class to calculate a new proportion variable)
+
+3. Create a new variable where all locations with a white population larger than 50% will be labeled as "mostly white", and the rest as "mostly non-white).
+
+4. Produce a pie chart and a barplot for the number of locations labeled as predominantly white and as predominalty non-white.
+
+5. Produce a histogram with the distribution of white population throughout the census tracts
+
+6. Produce a boxplot comparing household income for predominantly white and predominalty non-white census tracts. Interpret briefly the results.
+
+## Lab deliverables (due on Feb 02)
+
+Upload to module 2 in canvas the following elements:
+
+1. A single pdf file containing the pie chart, barplot, histogram graphs and boxplot requested in points 4 and 5 above in a single pdf document produced through the code described in the tutorial for this lab. Make sure that the vertical and horizontal axes are properly labeled.
+2. A text describing your interpretation of the boxplot

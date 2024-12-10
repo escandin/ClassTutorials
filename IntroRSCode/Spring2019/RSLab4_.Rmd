@@ -1,0 +1,148 @@
+---
+title: 'Remote Sensing Lab 4: Atmospheric interactions and ground reflectance
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class4/Lab4Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+February 13 2019
+
+## Goals
+
+1.	To learn basic methods for relative atmospheric adjustment 
+
+2.	To understand:
+a. the definition of key radiometric terms and physical processes.
+b. the effect of atmospheric conditions on reflectance in different multispectral bands.
+c. the units in which pixel values can represent the interaction between electromagnetic energy and matter in remote sensing products.
+
+
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course. s
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+1. Locate the Landsat image downloaded in class from Earth Explorer in a folder that you will use as working directory in R. The image is from August 04 2016 and includes the city of Pucallpa. This is the reference image name: LC08_L1TP_006066_20160804_20170322_01_T1.tar
+
+2. Open R Studio, open a new R script and change the route to your working directory in the script using the function setwd(). Change also the path to your working directory in the lines running the readMeta() and stackMeta() functions.
+
+3. Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+4. Answer the questions in the answer sheet
+
+Have fun!
+
+## Background information
+
+Original values in satellite images come as digital numbers (DN). These are uncalibrated and do not represent meaningful physical units. The conversion of DN to reflectance consists of two steps. The first one converts the DNs to radiance (amount of energy released from an area represented by a pixel in the direction of the satellite sensor). The second step is the conversion from radiance to reflectance (proportion of incoming energy from the sun that is reflected back by the area represented by the pixel). While radiance is relative to the sun and satellite positions, sun irradiance and distance to the sun in the acquisition date, reflectance is an absolute measure that is inherent to the properties of the different radiating features regardless of satellite, sun position, etc. Therefore reflectance values allow comparison between images acquired in different dates or with ground measurements. There are two types of reflectance: Top of the Atmosphere or ToA reflectance, is the total proportion of electromagnetic energy received by the satellite and is the result of the reflectance and scattering by objects on the ground and the atmosphere. Ground or surface reflectance, corresponds to the representation of the energy reflected by the object on the ground without the atmosphere.
+
+Dark Object Subtraction or DOS, is a procedure to represent ground reflectance that mitigates the effect of atmospheric interference in the resultant energy recorded by the satellite. DOS assumes that the Digital Number (DN) of the darkest pixel should have a ground reflectance equal to zero and therefore any value higher than zero is assumed to be the effect the constituents of atmosphere at the time of acquisition of the image. This procedure requires to identify the DN of the darkest pixel(s) in each band and then subtract that number from each pixel value in the respective band.
+
+Complementary reading:
+https://www.harrisgeospatial.com/Learn/Blogs/Blog-Details/ArtMID/10198/ArticleID/16278/Digital-Number-Radiance-and-Reflectance
+
+1. Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+
+2. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class4/Lab4Materials"
+setwd(wd)
+```
+
+
+3. Check the names of the files in your working directory. Then copy the name of the compressed Landsat file name and paste it in untar to decompress the file. Then read the metadata to open and stack all the bands in R.
+```{r include = TRUE}
+dir(wd)
+untar("LC08_L1TP_006066_20160804_20170322_01_T1.tar")
+meta=readMeta(paste(wd, "LC08_L1TP_006066_20160804_20170322_01_T1_MTL.txt", sep="/"))
+L8=stackMeta(paste(wd, "LC08_L1TP_006066_20160804_20170322_01_T1_MTL.txt", sep="/"))
+L8
+```
+
+4. Plot the image in false composite. Then resize the image to an extent approximately equal to the image shown below. Plot the resized image.
+```{r include = TRUE, message=F, warning=F}
+plotRGB(L8, r=5, g=4, b=3, axes=FALSE, stretch="lin")
+#e=drawExtent()
+e=extent(520000, 610000, -1017000, -895000)
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, axes=FALSE, stretch="lin")
+```
+
+5. Estimate the value of the darkest pixels in haze bands
+```{r include = TRUE, message=F, warning=F}
+haze=estimateHaze(L8rsz, hazeBands=1:5, 
+                  darkProp=0.001, plot=TRUE)
+haze
+```
+
+6. Apply different types radiometric transformations. Check help by typing ?radCor
+
+```{r include = TRUE, message=F, warning=F}
+L8rad=radCor(L8rsz, metaData=meta, 
+             method="rad", hazeValues=haze, hazeBands=1:5, 
+             verbose=TRUE)
+
+L8ToA=radCor(L8rsz, metaData=meta, 
+             method="apref", hazeValues=haze, hazeBands=1:5, 
+             verbose=TRUE)
+
+L8dos=radCor(L8rsz, metaData=meta, 
+             method="sdos", hazeValues=haze, hazeBands=1:5, 
+             verbose=TRUE)
+```
+
+
+## Lab 4 deliverables
+
+Run the following lines: ?estimateHaze ?radCor. This will open the help menu for those functions. Read the information there along with the background information, the complementary link provided at the beginning of the lab and the assigned readings for the session as specified in the syllabus to answer the following questions with no more than one sentence:
+
+1. What do the values obtained from running the estimateHaze() function represent (0.3)
+
+2. How do the values in the haze object created in step 5 change with higher band numbers? Do you see any trend? (0.3)
+
+3. Based on the results, what one band is the most sensitive to atmospheric contamination? (0.3)
+
+4. Please fill up the table below with:
+a. The units in which pixel values are represented. Options are (0.6):
+•	Reflectance (proportion)
+•	Digital Number (DN), 
+•	Radiance (W m-2 sr-1)
+
+b. the minimum pixel values for bands 1 to 5 in each object. The values can be retrieved by running in R, the name of the objects listed in the first column of the Table (0.6)
+
+```{r include = TRUE, echo=FALSE}
+table=data.frame(cbind(c("L8rsz", "L8rad", "L8ToA", "L8dos"), rep("", 4), rep("", 4), rep("", 4),
+                         rep("", 4),rep("", 4),rep("", 4)))
+names(table)= c("Object Name", "Units", as.character(seq(1:5)))
+kable(table) %>%
+  kable_styling(bootstrap_options = c("striped", "bordered"), full_width = F)
+```
+
+5a. What is the difference between top of the atmosphere reflectance and ground reflectance? (0.8)
+
+5b. Which of those two objects has the lowest values in the table above? (0.3)
+
+5c. Based on your answer in 5a. what is the effect of the atmosphere on pixel reflectance values? (0.8)

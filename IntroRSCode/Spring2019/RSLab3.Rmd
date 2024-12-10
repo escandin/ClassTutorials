@@ -1,0 +1,210 @@
+---
+title: 'Remote Sensing Lab 3: Satellite data exploration and visualization
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+## Lab due
+February 06 2019
+
+## Goal
+1. To learn basic techniques for image cropping, resampling, alignment and pixel aggregation/disaggregation.
+2.	To understand differences in spatial, temporal, spectral and radiometric resolutions between optical satellites
+3.	To understand trade-offs between satellite data with different spatial, temporal, radiometric and spectral resolutions.
+
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+Have fun!
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class3/LabFigures"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+library(jpeg)      # For grabbing the dimensions of jpeg files
+fig1path=paste(wd, "Fig1NAIP.png", sep="/")
+fig2path=paste(wd, "Fig2.png", sep="/")
+fig3path=paste(wd, "Fig3.png", sep="/")
+fig4path=paste(wd, "Fig2NAIP.png", sep="/")
+fig5path=paste(wd, "Fig3NAIP.png", sep="/")
+fig6path=paste(wd, "Fig4.png", sep="/")
+
+fig1 = readPNG(fig1path)
+fig2 = readPNG(fig2path)
+fig3 = readPNG(fig3path)
+fig4 = readPNG(fig4path)
+fig5 = readPNG(fig5path)
+fig6 = readPNG(fig6path)
+```
+
+## Part A. Downloading images
+1.	Go to Earth explorer (http://earthexplorer.usgs.gov). Click on the login link and enter the credentials that you used in class to open an account. If you haven’t opened an account click on the register link and follow the instructions. Please remember the credentials you used because you will need them frequently to login througout the course of the semester.
+2.	Earth explorer has two main panels. The panel on the left is the search panel and the one on the right is a map to visualize the regions of interest and the footprint of the images available. The search panel has four main tabs on the top: Search Criteria, Data Sets, Additional Criteria, and Results. 
+3.	Click on the “Search Criteria” tab. This tab gives the option to select the data to download by location and date ranges. You can search either by 1) typing an address/place, the path and row of a satellite image of interest (we will cover this in class) or a feature, or 2) coordinates. In our case we will enter an address but you should spend time exploring the other options.
+4.	Type “Pennipack Park Phyladelphia” and click on the suggested location. This will show a pin in the selected location in the map.
+```{r include = TRUE, echo=FALSE}
+# echo ommits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+OMIT STEPS 5 AND 6 IF YOU STILL HAVE THE LANDSAT IMAGE DOWNLOADED FOR LAB 2.
+
+5.	Click on the “Data Sets” tab at the top of the search panel. Then on the drop down menu select Landsat/Landsat Collection 1 Level-1/Landsat 8 OLI/TIRS C1 Level-1
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig2path)
+```
+
+6. Click on the results tab and locate the Landsat image specified below. You can constrain the search for a given date range by going to the “Search Criteria” tab, scrolling down to the bottom and entering any dates of interest. Select the Landsat 8 image acquired on July 30 2017 as specified below:
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig3path)
+```
+
+7. Click on the “Data Sets” tab at the top of the search panel. Then on the drop down menu select Aerial Imagery/NAIP Geotiff as specified below.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig4path)
+```
+
+8.	Click on the results tab and locate the NAIP image specified below. You can constrain the search for a given date range by going to the “Search Criteria” tab, scrolling down to the bottom and entering the dates of interest.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig5path)
+```
+
+9.	Browse the buttons that appear at the bottom of the entity.
+
+```{r include = TRUE, echo=FALSE}
+include_graphics(fig6path)
+```
+
+Read their names and click on each one of them so that you become familiar with their functionality. Click on the “Download Options”button. The image should download as a compressed file with a .tar.gz extension in the default downloads folder in your computer. Move the compressed file into the working folder that you specified as setwd() in R above.
+
+## Part B. Data import resampling, alignment and pixel aggregation/disaggregation
+Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+1. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class3/LabFigures"
+setwd(wd)
+```
+
+2. Check the names of the files in your working directory. Then copy the name of the compressed Landsat file name and paste it in untar to decompress the file. Then read the metadata to open and stack all the bands in R.
+```{r include = TRUE}
+dir(wd)
+```
+
+```{r include = TRUE, message=F, warning=F}
+#opts_knit$set(root.dir = wd)
+untar(paste(wd,"LC08_L1TP_014032_20170612_20170628_01_T1.tar.gz",sep="/"))
+meta=readMeta(paste(wd, "LC08_L1TP_014032_20170612_20170628_01_T1_MTL.txt", sep="/"))
+L8=stackMeta(paste(wd, "LC08_L1TP_014032_20170612_20170628_01_T1_MTL.txt", sep="/"))
+```
+
+4. Copy and paste the name of the naip image below to decompress and open it in R.
+```{r include = TRUE, message=F, warning=F}
+unzip("m_4007564_se_18_1_20170824.zip")
+naip=stack("m_4007564_se_18_1_20170824.tif") # The tif file for NAIP has all the bands already stacked
+```
+
+5. Compare the spatial specifications of both images and then plot them as RGB composites 
+
+```{r include = TRUE, message=F, warning=F}
+L8 # Provides the spatial information associated with the downloaded image.
+naip # Provides the spatial information associated with the downloaded image.
+plotRGB(L8, r = 4, g = 3, b = 2, axes = FALSE, stretch = "lin",
+        main = "Landsat true Color Composite" )
+plotRGB(naip, r = 1, g = 2, b = 3, axes = TRUE, stretch = "lin",
+        main = "naip true Color Composite" )
+```
+
+6. As you can see from the results above, the projections are different. Convert the naip image to the projection of the Landsat image and verify that the projection is the same. Remove the naip image from the environment to release memory
+```{r include = TRUE, message=F, warning=F}
+#naipprj1=projectRaster(naip[[1]], crs=crs(L8))
+#naipprj2=projectRaster(naip[[2]], crs=crs(L8))
+#naipprj3=projectRaster(naip[[3]], crs=crs(L8))
+#naipprj4=projectRaster(naip[[4]], crs=crs(L8))
+#naipprj=stack(naipprj1,naipprj2,naipprj3,naipprj4)
+#writeRaster(naipprj, filename="naipprj.tif", overwrite=TRUE)
+#rm(naipprj1, naipprj2, naipprj3, naipprj4)
+naipprj=stack("naipprj.tif")
+crs(naipprj)
+crs(L8)
+rm(naip)
+```
+
+7. Resize the Landsat image to the extent of the NAIP image.
+```{r include = TRUE, message=F, warning=F}
+L8rsz=crop(L8, naipprj)
+```
+
+8. Aggregate the Landsat image so that the pixel size is approximately equal to the minimum resolution available for MODIS images (~232 m).
+```{r include = TRUE, message=F, warning=F}
+L8agg=aggregate(L8rsz, fact=8)
+```
+
+9. Plot the reprojected NAIP image along with the original Landsat image and the Landsat  after aggregation and disaggregation for the area covered by the extent of the NAIP image. Save the images as pdf. 
+```{r include = TRUE, message=F, warning=F}
+pdf("VGutierrez_Lab3.pdf")
+plotRGB(L8agg, r = 4, g = 3, b = 2, axes = FALSE, stretch = "lin", ext=extent(naipprj),
+        main = "Landsat True Color Composite" )
+plotRGB(L8rsz, r = 4, g = 3, b = 2, axes = FALSE, stretch = "lin", ext=extent(naipprj),
+        main = "Landsat True Color Composite" )
+plotRGB(naipprj, r = 1, g = 2, b = 3, axes = FALSE, stretch = "lin", ext=extent(naipprj),
+        main = "naip True Color Composite" )
+dev.off()
+```
+
+## Lab deliverables
+
+1. Download an NAIP image including the area of Staten Island in NY from August 26 2017 by adapting the steps specified in Part A. Then modify part B to produce three PDF files for the extent of the NAIP image downloaded for Staten Island.
+
+2. Fill up the Table below with the information requested. If there is more than one value, separate them with comas. Calculate the number of potential pixel values based on the quantization number using the formula provided in the class presentation. Below are some helpful sources (0.5 pt) and hints. You can also infer some of the answers from the data you downloaded or the “Show metadata and browse” button associated to each dataset in Earth Explorer.
+
+```{r include = TRUE}
+table1=data.frame(cbind(c("Pixel size", "Sensor revisit time", 
+                          "number of bands", "quantization", 
+                          "maximum number of pixel values possible "), rep("", 5), rep("", 5)))
+names(table1)= c("Characteristic", "Landsat 8", "NAIP")
+kable(table1, format = "markdown")
+```
+
+3. Based on the information in the table above and information in the data sources below, rank the three sensor datasests (MODIS, Landsat 8, NAIP) in terms of the four types of resolution reviewed in class (0.5 pt), please write below the image with the highest:
+
+Spatial resolution _________________________
+Temporal resolution _________________________
+Spectral resolution _________________________
+Radiomeric resolution _________________________
+
+•	 https://landsat.gsfc.nasa.gov/operational-land-imager/
+•	https://landsat.usgs.gov/how-does-landsat-8-differ-previous-landsat-satellites 
+•	https://www.fsa.usda.gov/programs-and-services/aerial-photography/imagery-programs/naip-imagery/
+•	https://www.fsa.usda.gov/Internet/FSA_File/naip_info_sheet_2015.pdf 
+
+4. In the table below, mark with an X the land covers that you can see when you zoom into the extent of the NAIP image with each one of the datasets used in the lab (1 pt).
+
+```{r include = TRUE}
+table2=data.frame(cbind(c("Forest", "Road", "Bridge", "River", "Grassland",
+                          "Urban", "Suburban"), rep("", 7), rep("", 7)))
+names(table2)= c("Land cover", "Landsat 8 aggregated, Landsat 8", "NAIP")
+kable(table2, format = "markdown")
+```
+
+5. Based on your answers in the table above, briefly state what is the effect of pixel size on the identification of land covers?

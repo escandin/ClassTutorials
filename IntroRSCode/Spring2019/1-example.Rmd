@@ -1,0 +1,25 @@
+---
+title: "Viridis Demo"
+output: html_document
+---
+
+# Lab due
+January 23 2019
+
+```{r include = FALSE}
+library(viridis)
+```
+
+## Goal
+To become familiar with basic functions for data downloading, visualization and visual exploration in R.
+
+
+```{r}
+image(volcano, col = viridis(200))
+```
+
+## Magma colors
+
+```{r}
+image(volcano, col = viridis(200, option = "A"))
+```

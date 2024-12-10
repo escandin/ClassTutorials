@@ -1,0 +1,196 @@
+---
+title: 'Remote Sensing Lab 5: Topographic correction
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2019Spring/Class5/Lab5Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+February 20 2019
+
+## Goals
+
+1.	To learn how to align and mask images with different geographic projections and spatial resolutions.
+2.	To master methods for topographic adjustment to spectral satellite images
+3.	To understand the purpose of and methods for projecting, cropping and masking rasters.
+4.	To learn how to mitigate the effects of topography in the spectral characteristics of satellite imagery from mountainous areas. 
+
+
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course. s
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+1. Go to earthexplorer.usgs.gov. Enter “Hanzhong” as the place in the search criteria. In datasets select:
+•	Landsat > Landsat Collection-1 Level-1 > Landsat 8 OLI/TIRS C1 Level-1.
+•	Digital Elevation > SRTM > SRTM 1 Arc-Second Global.
+
+2. In results, select Landsat as the dataset and download image corresponding to path 128, row  37 from 13-MAY-18.  Download the GEOTIFF data product.
+
+3. Select SRTM as the dataset and download the only image available. It should correspond to the  coordinates 33, 107. Download the GEOTIFF product.
+
+4. Open R Studio, open a new R script and change the route to your working directory in the script using the function setwd().
+
+3. Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+5.	If the code runs, adapt the script to apply it to the “Rocky Mountains”. The Landsat image corresponds to path 38 row 29 from 10-AUG-18. The SRTM image correspond to the coordinates 44, -110.
+
+6. Answer the questions in the answer sheet and submit it along with the required pdf file to canvas.
+
+Have fun!
+
+1. Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+```
+
+2. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/tug61163/Documents/Courses/IntroRemoteSensing/2019Spring/Class5/Lab5Materials"
+setwd(wd)
+```
+
+3. Decompress, open and stack landsat image
+```{r include = TRUE, message=F, warning=F}
+dir()
+
+### IN IMAGE FOR CLASS EXCERCISE
+L8Name="LC08_L1TP_128037_20180513_20180517_01_T1"
+
+### IN IMAGE FOR LAB REPORT
+#L8Name="LC08_L1TP_038029_20180810_20180815_01_T1"
+
+# Decompress and stack landsat image
+untar(paste(L8Name, "tar", sep="."))
+
+meta=readMeta(paste(paste(L8Name, "MTL", sep="_"), "txt", sep="."))
+L8=stackMeta(paste(paste(L8Name, "MTL", sep="_"), "txt", sep="."))
+L8
+plot(L8[[5]])
+```
+
+4. Open and project SRTM image. Then plot it.
+```{r include = TRUE, message=F, warning=F}
+### IN IMAGE FOR CLASS EXCERCISE
+srtmName="n33_e107_1arc_v3.tif"
+
+### IN IMAGE FOR LAB REPORT
+#rtmName="n44_w110_1arc_v3.tif"
+
+srtm=raster(srtmName)      
+srtm
+plot(srtm)
+
+srtmPrj=projectRaster(srtm, L8)
+plot(srtmPrj)
+```
+
+5. Use the drawPolygon() function to create an extent that includes only pixels with valid information in the plotted SRTM image. Use that extent to crop both the projected srtm image and the Landsat scene.
+```{r include = TRUE, message=F, warning=F}
+#e=drawExtent()
+e=extent(686932.5, 778498, 3656499, 3763326)
+srtmRsz=crop(srtmPrj,e)
+plot(srtmRsz)
+
+L8Rsz=crop(L8, e)
+plot(L8Rsz[[5]])
+
+# Remove objects to release memory
+#rm(L8,srtm, srtmPrj)
+```
+
+6.  Mask images to a common vaid domain
+```{r include = TRUE, message=F, warning=F}
+m=c(-Inf,0,NA, 0,Inf,1)
+reclassm=matrix(m, ncol=3, byrow=TRUE)
+L8msk=reclassify(L8Rsz, reclassm)
+L8msk1=Reduce(f="*", list(L8msk[[1]], L8msk[[2]], L8msk[[3]], L8msk[[4]], L8msk[[5]],
+                      L8msk[[6]], L8msk[[7]], L8msk[[8]], L8msk[[9]], L8msk[[10]]))
+srtmsk=reclassify(srtmRsz, reclassm)
+
+mask=L8msk1*srtmsk
+plot(mask)
+
+L8mskd=mask(L8Rsz,mask)
+srtmskd=mask(srtmRsz, mask)
+rm()
+
+plot(L8mskd[[5]])
+plot(srtmskd)
+
+# Remove elements to release memory
+#rm(mask, L8msk, L8msk,srtmsk, L8Rsz, srtmRsz)
+```
+
+7. Calculate terrain variables from the DEM
+```{r include = TRUE, message=F, warning=F}
+slope=terrain(srtmskd, opt='slope')
+aspect=terrain(srtmskd, opt='aspect')
+terrainvar=stack(slope,aspect)
+names(terrainvar)=c('slope', 'aspect')
+rm(slope,aspect)
+
+# calculate illumination
+shade=topCor(L8mskd, dem=terrainvar, 
+             metaData=readMeta(paste(paste(L8Name, "MTL", sep="_"), "txt", sep=".")),
+             method="illu")
+plot(shade)
+```
+
+8.  Apply topographic correction
+```{r include = TRUE, message=F, warning=F}
+L8cor=topCor(L8mskd, dem=terrainvar, 
+            metaData=readMeta(paste(paste(L8Name, "MTL", sep="_"), "txt", sep=".")),
+            method="C")
+
+pdf("VGutierrez_Lab5.pdf")
+  plotRGB(L8mskd, r=5, g=4, b=3, axes=TRUE, stretch="lin")
+  plotRGB(L8cor, r=5, g=4, b=3, axes=TRUE, stretch="lin")
+dev.off()
+```
+
+## Lab 5 deliverables
+
+1. Upload two RGB map composites representing the pixel values for bands 654 from Landsat before and after topographic correction for the Rocky mountains. Change the name of the pdf file for your Last name First initial and the name of the lab assignment ("GutierrezV_Lab1.pdf"") before submission (1.5 pts).
+
+2. Read the help documentation for the functions projectRaster(), reclassify(), terrain(), and topCor() and answer the questions below briefly. (Each question is worth XXXXXXXXXX points).
+
+a. Try to do XXX operation with the SRTM raster before applying projectRaster(). Explain In one sentence, why the operation only works after projection
+
+
+b. What are the XX variables that you need to provide to XXX() in order to produce a topographic correction
+
+Why do you need to calculate slope and aspect in the terrain() function before performing the topographic correction?
+
+3. What does the application of the “illu” method in the function topCor() produce?
+_______________________________________________________________________
+
+4. What does the application of the method “C” in topCor() produce (check the images in the BeforeAndAfter.pdf file obtained from running the algorithm)? (0.1) _______________________________________________________________________
+
+5. What two data values does the topCor () function read from the metadata file from Landsat when you add the metaData argument? 
+_______________________________________________________________________
+
+5b. What are the values of those two data in the metadata of the Landsat image used for the analysis?
+
+5c. What is that information used for by the topCor() function?
+_______________________________________________________________________
+

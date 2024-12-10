@@ -1,0 +1,459 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 5: Exploratory Data Analysis (EDA)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+October 01
+
+## Goal
+To learn how to perform an exploratory data analysis.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use the mosquito data that we 
+
+Have fun!
+
+### 1. System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2024/Week3_DataCollection")
+setwd(wd)
+library(terra)
+library(sf)
+library(leaflet)
+library(tidycensus)
+library(tigris)
+library(ggplot2)
+library(dplyr)
+library(summarytools)
+library(corrplot)
+library(Amelia)
+library(DataExplorer)
+library(GGally)
+```
+
+#### 1. Load files and edit as needed
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datastack=rast("datastack.tif")
+SpatData=vect(paste0(wd, "/DataPoints/DataPoints.shp"))
+studyArea=vect("studyArea.shp")
+#SpatDF=read.csv("SpatDF.csv")
+
+# shorten the names of variables 11 through 16
+names(datastack)
+names(datastack)[8:14] <- gsub("PRISM_|_stable_4kmM3_2015_bil", "", names(datastack)[8:14])
+names(datastack)[15]<-"LC"
+
+# View the updated varnames
+names(datastack)
+
+# Extract data
+SpatDF=extract(datastack, SpatData)
+SpatDF=cbind(SpatDF, SpatData)
+SpatDF$response=rep(0, nrow(SpatDF))
+SpatDF$response[SpatDF$ADULTS>0]=1
+```
+
+#### 2. Understand the Data Structure and reformat variables as needed
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+str(SpatDF)
+summary(SpatDF)
+dfSummary(SpatDF)
+
+# You can see that "response" appears as integer but it really should represent classes (presence, absence). Let's convert it to a factor
+class(SpatDF$response)
+SpatDF$response=as.factor(SpatDF$response)
+dfSummary(SpatDF)
+```
+
+#### 3.  Identify and remove missing and duplicate data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Identify  missing data 
+sum(is.na(SpatDF))
+missmap(SpatDF)
+
+# Remove missing data (if any and you cannot recover it)
+nrow(SpatDF)
+SpatDF=subset(SpatDF, complete.cases(SpatDF))
+nrow(SpatDF)
+
+# Identify duplicates
+dups=duplicated(SpatDF)
+SpatDF[dups,] # no duplicates identified in this particular dataset
+
+## Remove Identify duplicates (if any)
+nrow(SpatDF)
+SpatDF=SpatDF[!dups,]
+nrow(SpatDF)
+```
+
+#### 4. Identify Potential Spatial Sampling Biases and mitigate them (if possible)
+
+make sure that the crs of the spatial data is the same as the one of the datastack
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+crs(SpatData)==crs(datastack) # If FALSE, then project:
+SpatData=project(SpatData, datastack)
+
+plot(datastack[[8]])
+plot(SpatData, add=T)
+```
+
+##### Diagnose biases visually
+We will explore the location of the points with respect to the location of urban areas
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#Download urban areas
+urban= tigris::urban_areas(class = "sf")
+
+# We need to re-project to the crs that leaflet uses
+SpatDataPrj=project(SpatData, "EPSG:4326")
+urbanVec=vect(urban)
+urbanVec=project(urbanVec, "EPSG:4326")
+urbanVecRsz=crop(urbanVec, SpatDataPrj)
+
+# Plot in terra
+plot(urbanVecRsz)
+plot(SpatDataPrj, add=T)
+
+# Plot in sf
+urbtest=st_as_sf(urbanVecRsz)
+pointest=st_as_sf(SpatDataPrj)
+
+plot(urbtest["NAME10"], main = "Polygons and Points with Attributes", reset = FALSE)
+plot(st_geometry(pointest), col = "red", pch = 16, add = TRUE)  # Overlay points
+
+# Plot in leaflet
+## Extract coordinates from the point sf object
+pointest_coords <- st_coordinates(pointest)
+
+# Add the coordinates back as columns in the sf object
+pointest$lon <- pointest_coords[, 1]  # Longitude
+pointest$lat <- pointest_coords[, 2]  # Latitude
+
+# Now create the leaflet map using the extracted coordinates
+leaflet() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>%
+  
+  # Add the polygon layer
+  addPolygons(data = urbtest, color = "blue", weight = 2, popup = "Polygon") %>%
+  
+  # Add the point layer using the preprocessed longitude and latitude
+  addCircleMarkers(lng = ~lon, lat = ~lat,  # Use the new lon and lat columns
+                   data = pointest, 
+                   color = "red", radius = 1, popup = ~as.character(ADULTS)) %>%
+  
+  # Set the view of the map
+  setView(lng = -75, lat = 40, zoom = 8)
+```
+
+##### Diagnose biases quantitatively
+Implement a function that produces random points in the Study Area equal to the number of points in the database
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Load the function
+SpatBiasTest <- function(refpoints, refarea, refdata, varname) {
+  
+  # Sample points within the reference area
+  refarea <- sf::st_as_sf(refarea)
+  sampoints <- sf::st_sample(refarea, size = nrow(refpoints))
+  
+  # Convert points to SpatVector for terra operations
+  #refpoints <- terra::vect(refpoints)  # Ensure refpoints is a SpatVector
+  sampoints <- terra::vect(sampoints)  # Ensure sampoints is a SpatVector
+  
+  # Ensure refdata is a SpatRaster or SpatVector (assumed to be SpatRaster here)
+  if (!inherits(refdata, "SpatRaster") && !inherits(refdata, "SpatVector")) {
+    stop("refdata must be a SpatRaster or SpatVector")
+  }
+  
+  # Extract data for the reference points and sampled points
+  refSpatDF <- terra::extract(refdata, refpoints)
+  samSpatDF <- terra::extract(refdata, sampoints)
+  
+  # Add source labels to differentiate between measured and sampled points
+  refSpatDF$source <- rep("measured", nrow(refSpatDF))
+  samSpatDF$source <- rep("sampled", nrow(samSpatDF))
+  
+  # Combine both data sets
+  testdata <- rbind(refSpatDF, samSpatDF)
+  
+  # Plot CDF using ggplot2
+  cdfplot <- ggplot(testdata, aes_string(x = varname, color = "source")) + 
+    stat_ecdf(size = 1) +  # Plot the empirical cumulative distribution function
+    labs(title = "Cumulative Density Function",
+         x = varname, y = "Cumulative Probability") +  # Add titles and axis labels
+    theme_minimal() +  # Use a minimal theme
+    scale_color_manual(values = c("blue", "red"))  # Customize colors for the lines
+  
+  # Perform the Kolmogorov-Smirnov test
+  ks_result <- ks.test(refSpatDF[[varname]], samSpatDF[[varname]])  # Fix column selection
+  
+  # Return the plot and KS test results as a list
+  results <- list(cdfplot = cdfplot, ks_result = ks_result)
+  
+  return(results)
+}
+
+# Execute the function
+test <- SpatBiasTest(SpatData, studyArea, datastack, "tmin")
+print(test$cdfplot)
+test$ks_result
+```
+
+The bias is obvious visually. Let's select a subset of points that are inside urban areas only. The easiest is with the function intersect() from the package terra
+
+##### Spatial bias mitigation 1: Data subsetting
+We will select only the points that lay within urban areas and see if this reduces the bias.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Let's project the urban file to the reference crs that we are using for the project
+urbanVecDef=project(urbanVecRsz, SpatData)
+
+# Select a subset of points that are located within urban areas
+SpatDataSub=terra::intersect(SpatData, urbanVecDef)
+plot(SpatData)
+plot(SpatDataSub, col="blue", add=T)
+
+# Test the performance of the bias mitigation strategy
+test2 <- SpatBiasTest(SpatDataSub, studyArea, datastack, "tmin")
+print(test2$cdfplot)
+test2$ks_result
+```
+
+It seems to make it worse, at least with the tmin variable. Let's try something else.
+
+##### Spatial bias mitigation 2: Spatial filtering
+We will divide the study area in gridcells of similar area and then select one random point per gridcell
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Create raster with pixels representing consecutive zones zones
+zones=aggregate(datastack[[1]], 100)
+#plot(zones)
+
+# Assign consecutive values to a raster. Each value designates a sampling cell ID
+values(zones)=1:ncell(zones)
+plot(zones)
+
+# Create and implement a function that selects one random point from the database per pixel zones
+randPtPerPix <- function(points, strata) {
+  
+  # Step 1: Extract the pixel number for each point in SpatData
+  # Use terra::extract to extract the pixel number from the raster 'zones'
+  SpatData$pixel_id <- extract(zones, SpatData)[,2]  # Assuming raster value is in column 2
+  
+  # Step 2: Remove points that fall outside any pixel (NA values)
+  SpatData <- SpatData[!is.na(SpatData$pixel_id), ]
+  
+  # Step 3: Convert SpatData to a data frame and then to an sf object
+  #SpatData_df <- as.data.frame(SpatData)
+  SpatData_sf <- st_as_sf(SpatData)
+  
+  # Step 4: For each pixel, randomly select one point
+  # Group by the pixel_id and sample one point for each pixel
+  selected_points_sf <- SpatData_sf %>%
+    group_by(pixel_id) %>%
+    slice_sample(n = 1) %>%  # Select one random point from each pixel
+    ungroup()
+selected_points_sf=terra::vect(selected_points_sf)
+  # Step 5: Return the selected points with pixel IDs as a new sf object
+  return(selected_points_sf)
+}
+
+selected_points <- randPtPerPix(SpatData, zones)
+
+# Let's test again the performance of the bias mitigation strategy
+plot(zones)
+plot(urbtest, add=T)
+plot(SpatData, add=T)
+
+plot(zones)
+plot(urbtest, add=T)
+plot((selected_points), add=T)
+
+test3 <- SpatBiasTest(selected_points, studyArea, datastack, "tmin")
+print(test3$cdfplot)
+test3$ks_result
+
+pdf("lab5BiasResults.pdf")
+print(test$cdfplot)
+print(test2$cdfplot)
+print(test3$cdfplot)
+dev.off()
+```
+
+You can play with the size of the zones (defined in the function aggregate() to test how they influence the test results. A larger window tends to reduce bias more but significantly reduces the size of the database. You should do this test with each predictor.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nrow(SpatData)
+nrow(selected_points)
+```
+
+
+Let's produce the final unbiased database
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+SpatDFSub=terra::extract(datastack, selected_points)
+SpatDFSub = as.data.frame(SpatDFSub)
+SpatDFSub=cbind(SpatDFSub, selected_points)
+SpatDFSub$response=rep(0, nrow(SpatDFSub))
+SpatDFSub$response[SpatDFSub$ADULTS>0]=1
+SpatDFSub$response=as.factor(SpatDFSub$response)
+
+# Let's check for missing data and duplicates again
+missmap(SpatDFSub)
+SpatDFSub=subset(SpatDFSub, complete.cases(SpatDFSub))
+write.csv(SpatDFSub, "SpatDFSub.csv")
+```
+
+##### Extract filtered data in to a dataframe
+
+#### 5.  Evaluate the characteristics of each variable
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot_bar(SpatDFSub[,c(2:21,32)]) # for discrete variables
+plot_qq(SpatDFSub[,c(2:21,32)]) # for continuous variables
+plot_density(SpatDFSub[,c(2:21,32)]) # for continuous variables
+
+# PCA requires scaling
+scalfun=function(x){
+  xscaled=(x-median(x))/IQR(x)
+  return(xscaled)
+}
+
+SpatDFSubScaled <- as.data.frame(lapply(SpatDFSub[, c(2:15, 17:21)], scalfun))
+plot_prcomp(SpatDFSubScaled, nrow=2L, ncol=2L)
+```
+
+#### 6. Evaluate and visualize relationships between variables of interest and refine hypotheses
+
+Relationships between numeric variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+cor_matrix <- cor(SpatDFSub[,c(2:15, 17:21)]) #Only numeric variables of interest
+
+corrplot(cor_matrix, method = "circle")
+plot_correlation(SpatDFSub[,c(2:15, 17:21)])
+
+# OPTIONAL: You edit the code above to compare how much the correlation between variables changes before and after bias mitigation
+
+# correlation between topographic variables
+pairs(SpatDFSub[,c(2:8)])
+
+# correlation between climatic variables
+pairs(SpatDFSub[,c(9:15)])
+
+# correlation between socioeconomic variables
+pairs(SpatDFSub[,c(17:21)])
+
+# OPTIONAL: You can modify the code to evaluate correlation between any variables of interest
+
+# Create a function to add histograms to the pairs graph
+panel.hist <- function(x, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5))
+    his <- hist(x, plot = FALSE)
+    breaks <- his$breaks
+    nB <- length(breaks)
+    y <- his$counts
+    y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = rgb(0, 1, 1, alpha = 0.5), ...)
+    # lines(density(x), col = 2, lwd = 2) # Uncomment to add density lines
+}
+
+# Let's plot the pairs again, adding the histograms
+pairs(SpatDFSub[,c(2:8)], upper.panel = NULL,
+      diag.panel = panel.hist)
+
+pairs(SpatDFSub[,c(9:15)], upper.panel = NULL,
+      diag.panel = panel.hist)
+
+pairs(SpatDFSub[,c(17:21)], upper.panel = NULL,
+      diag.panel = panel.hist)
+```
+
+Relationship between class variables and numeric variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+table(SpatDFSub$response)
+plot_bar(SpatDFSub, by="response")
+names(SpatDFSub)
+
+# Compare the statistics of each variable per responses numerically"
+groupStats <- SpatDF[,c(2:15, 17:21, 31)] %>%
+  group_by(response) %>%
+  summarise(across(where(is.numeric), list(mean = mean, sd = sd, median = median)))
+
+groupStats=t(groupStats)
+groupStats
+
+# Let's do the comparison graphically"
+pdf("boxplots.pdf")
+for (i in c(2:15, 17:21)){
+print(ggplot(SpatDFSub, aes(x = response, y = SpatDFSub[,i])) + 
+  geom_boxplot() +
+  theme_minimal() +
+  ggtitle(paste0("Boxplot of ", names(SpatDFSub)[i], " by responses")) +
+  ylab(names(SpatDFSub)[i]) 
+)
+}
+dev.off()
+
+# Plot data interactions per groups. Let's select the most promising variables from above
+options(repr.plot.width = 20, repr.plot.height = 10)
+SpatDF %>% 
+  select("elevation", "tdmean", "tmean", "vpdmax", "ppt", "total_populationE", "median_year_builtE") %>%
+  ggpairs(mapping = aes(color = SpatDF$response, alpha = 0.5))
+```
+
+#### 7. Produce report with a few outputs
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+SpatDF %>%
+    create_report(
+        output_file = paste("Report", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), sep=" - "),
+        report_title = "EDA Report - Mosquito presence",
+        y = "response"
+    )
+```
+
+## Lab deliverables
+#### 1. Bias mitigation (1 pt)
+1.1. Use the data for your final project to justify whether a bias test is needed. If so, produce a bias test and based on the test results, define and justify briefly whether bias mitigation is required. Provide graphical and statistical evidence that supports your decisions. 
+
+1.2 If spatial bias is present, implement a bias mitigation strategy. Describe briefly the bias mitigation strategy that you implemented and provide evidence that shows how effective was your approach to reduce spatial bias.
+
+#### 2. Variable selection (2 pt)
+Briefly respond the questions below and support your answers with graphical and/or numerical results from the EDA:
+
+2.1. What variables do you expect to provide redundant information to the model? If two or more variables are redundant, define which one of those would you choose based on both the results of the EDA and your knowledge of potential mechanisms that might explain the relationship between predictors and the response.
+
+2.2. What are the four variables that you expect to be the most influential on your prediction? Provide the name of the variables ranked from higher to lower expected importance.
+
+2.3. What are the four non-redundant variables that you expect to be the least influential?
+
+2.4 Do you expect interactions between variables to be important? If so, which?
+
+#### 3. Hypotheses (1 pt)
+Based on the results of the EDA, revisit the hypotheses that you stated in lab 3 and refine as needed. Please show evidence from the EDA that support your refined hypotheses.
+

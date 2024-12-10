@@ -1,0 +1,212 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 4: Bias mitigaton and area of applicabilty'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+This lab has no report
+
+## Goal
+To learn how to detect and mitigate spatial biases in input data
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use the mosquito data from previous labs to identify, measure, and mitigate spatial biases in training data.
+
+Have fun!
+
+### 1. System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week13_SpatialElementsOfMachineLearning"
+sourcedir="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week6"
+setwd(wd)
+library(terra)
+library(sf)
+#library(DataExplorer)
+#library(GGally)
+#library(dplyr)
+```
+
+#### Load files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+load(paste0(sourcedir,"/alldata.RData"))
+names(alldata)
+summary(alldata$ADULTS)
+```
+
+#### Preparing the data
+Before exploring the data, let's create a binary column representing mosquito presences/absences.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+alldata$PRESENCE=alldata$ADULTS
+alldata$PRESENCE[alldata$PRESENCE>0]=1
+alldata$PRESENCE=as.factor(alldata$PRESENCE)
+```
+
+Identify and remove missing observations and duplicates
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+str(alldata)
+summary(alldata)
+head(alldata)
+nrow(alldata)
+alldata=subset(alldata, complete.cases(alldata))
+nrow(alldata)
+
+dups=duplicated(alldata)
+alldata[dups,]
+nrow(alldata)
+alldata=alldata[!dups,]
+nrow(alldata)
+```
+
+#### Assess and mitigate spatial bias
+Upload raster stack and spatial sampled data points
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datastack=rast(paste0(sourcedir, "/datastack.tif"))
+
+# Remove NAs
+sumstack=sum(datastack)
+sumstack[!is.na(sumstack)]=1
+datastack=mask(datastack, sumstack)
+
+SpatData=vect(paste0(sourcedir,"/SpatData.shp"))
+names(datastack)==names(alldata[13:32])
+names(datastack[[15]])="LC"
+```
+
+Produce a grid to perform spatial filtering
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+r <- datastack[[16]]
+# set the resolution of the cells to fifty times the original resolution
+r=aggregate(r,fact=33) # approximately 1 km
+r[(r>0)]=c(1:ncell(r))
+plot(r)
+r=as.polygons(r)
+```
+
+Extract from each grid-cell, a random sampled point
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+strat=extract(r, SpatData)
+SpatData$strat=strat$income
+for(i in unique(SpatData$strat)){
+  sub=SpatData[SpatData$strat==i]
+  samp=sample(sub, size=1)
+  if(i==unique(SpatData$strat)[1]){
+    subset=samp
+  }else{
+      subset=rbind(subset, samp)}
+}
+plot(r)
+plot(SpatData, cex=0.3, add=T)
+plot(subset, cex=0.3, col="red", add=T)
+```
+
+Compare the frequency distribution of covariates within the sampled locations to the one that would be obtained if sampling was performed using a random reference sampling
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Before filtering
+reforig=spatSample(datastack[[16]], size=nrow(SpatData), "random", as.points=T)
+length(reforig)
+reforig=reforig[!is.na(reforig$income)]
+length(reforig)
+plot(datastack[[16]])
+plot(reforig,add=T)
+
+cdf1=ecdf(alldata$income)
+cdf2=ecdf(reforig$income)
+plot(cdf1)
+plot(cdf2, col="red", add=T)
+
+# After filtering
+reffilt=spatSample(datastack[[16]], size=nrow(subset), "random", as.points=T)
+reffilt=reffilt[!is.na(reffilt$income)]
+subdata=extract(datastack, subset)
+cdf1f=ecdf(subdata$income)
+cdf2f=ecdf(reffilt$income)
+plot(cdf1f, cex=0.05)
+plot(cdf2f, cex=0.05, col="red", add=T)
+```
+
+It looks like it hasn't changed that much or that it might be worse after filtering, especially in higher income areas. 
+
+#### Area of applicability
+We will have to constraint the geographic domain fo the data to include only the samples within urban areas. For that purpose, we will download a map representing urban areas only from the US census: https://www.census.gov/cgi-bin/geo/shapefiles/index.php 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+urban=vect(paste0(sourcedir, "/tl_2015_us_uac10.shp"))
+urban=project(urban, datastack)
+urban=crop(urban, ext(datastack))
+#writeVector(urban, "urban.shp")
+urbanrast=rasterize(urban, datastack)
+datastackurb=mask(datastack, urbanrast)
+urbanrast=mask(urbanrast, sumstack)
+urban=as.polygons(urbanrast)
+plot(urbanrast, col= "gray")
+plot(subset, cex=0.5, add=T)
+```
+
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+urbansf=sf::st_as_sf(urban)
+subset=sf::st_as_sf(subset)
+#urbansf=read_sf("urban.shp")
+ptsInUrban=st_intersection(subset, urbansf)
+ptsInUrban=vect(ptsInUrban)
+plot(datastackurb[[16]])
+plot(ptsInUrban,cex=0.2,add=T)
+
+names(ptsInUrban)
+ptsInUrban=ptsInUrban[,1:10]
+```
+
+Let's compare the frequency distribution of covariates between sampled and random points but only within urban areas.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+set.seed(13)
+reffiltU=spatSample(urban, size=nrow(ptsInUrban), "random")
+varU=extract(datastack, reffiltU)
+reffiltU$income=varU$income
+#reffiltU=spatSample(datastackurb[[16]], size=nrow(ptsInUrban), "random", as.points=T)
+#reffiltU=reffilt[!is.na(reffiltU$income)]
+
+plot(datastackurb[[16]])
+plot(ptsInUrban, cex=0.3, add=T)
+plot(reffiltU, cex=0.3, add=T, col="red")
+
+subdataU=extract(datastack, ptsInUrban)
+cdf1U=ecdf(subdataU$income)
+cdf2U=ecdf(reffiltU$income)
+plot(cdf1U, cex=0.05)
+plot(cdf2U, col="red", cex=0.05, add=T)
+
+# Let's compare it with the previous one
+plot(cdf1f, cex=0.05)
+plot(cdf2f, cex=0.05, col="red", add=T)
+
+# Through a k-s test
+ks.test(subdataU$income, reffiltU$income)
+ks.test(subdata$income, reffilt$income)
+```
+

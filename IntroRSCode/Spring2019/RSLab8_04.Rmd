@@ -1,0 +1,368 @@
+---
+title: 'Remote Sensing Lab 8: Supervised and Unsupervised classification'
+
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class8/Lab8Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+April 10 2019
+
+## Goals
+1. To learn graphical approaches to assess class separability for land cover classification.
+2. To learn methods for supervised and unsupervised image classification and their implementation in R.
+3. To learn how to perform and interpret an accuracy assessment for land cover classification.
+
+## Total score
+The lab counts for up to 8 points towards the final grade of the course.
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+1. Open R Studio, open a new R script and change the route to your working directory in the script using the function setwd().
+
+2. Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+3.	Answer the questions in the answer sheet and submit it along with the required pdf files to canvas.
+
+Have fun!
+
+1. Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+library(rgl)
+library(prettymapr)
+library(stringr)
+```
+
+2. Load the two functions below. I created them for visual separability assessment. 
+```{r include = TRUE, message=F, warning=F}
+stack2df=function(inrast=rastack, invec=polygons,  
+                  classcolname="class")
+{
+  # extracts into a data frame the pixel values for all bands from different classes
+  # defined in a spatialpolygon dataframe
+  # na.rm removes all pixels that have NAs in at least one rastack band
+  
+  # required functions
+  stackmask= function(inrast=inrast, ranges=c(-Inf,1,NA, 1,99999,1)){
+    # masks out any pixels that have no valid information in at least 1 band in a raster stack
+    # mask input image
+    ranges=matrix(ranges)
+    msk=reclassify(inrast,ranges)
+    msk=max(msk)
+    rastack=inrast*msk
+    return(inrast)
+  }
+  
+  extractval=function(inraster=inrast, msk=msk){
+    outvector=inraster*msk
+    outvector=na.omit(getValues(outvector))
+    return(outvector)
+  }
+  
+  # assign class ID to each class
+  invec$class_ID=rep(NA, nrow(invec@data))
+  for (i in 1:length(invec[[classcolname]])){
+    invec$class_ID[which(invec[[classcolname]]==levels(invec[[classcolname]])[i])]=i
+  }
+  # create a raster of class_ids
+  calibrast=rasterize(invec, inrast[[1]], field=invec$class_ID)
+  
+  ranges=matrix(c(-Inf,.99,NA, 1,99999,1))
+  calibmsk=reclassify(calibrast,ranges)
+  
+  # Extract pixel values into a dataframe
+  class_ID=(extractval(calibrast, calibmsk))
+  dataset=data.frame(matrix(data=NA, nrow=length(class_ID), ncol=nlayers(inrast)))
+  
+  # add a column with a class name
+  dbclassname=rep(NA, length(class_ID))
+  for (i in 1:length(levels(invec[[classcolname]]))){
+    dbclassname[which(class_ID==i, arr.ind=TRUE)] = levels(invec[[classcolname]])[i]
+  }
+  dataset=cbind(class_ID, dbclassname, dataset)
+  rm(class_ID, dbclassname)
+  
+  for (i in 1:nlayers(inrast)){
+    dataset[,i+2]=extractval(inrast[[i]], calibmsk)
+  }
+  names(dataset)=c("class_ID", "class_name", names(inrast))
+  return(dataset)
+}
+
+plotSpectra=function(dataset=outdata, bandnames=c("B3_dn", "B4_dn", "B5_dn"),
+                     classfield=1, classlabels= levels(dataset[,classfield]),
+                     classcol=sample(colors(), size=length(classlabels))){
+  #Assign colors to different labels
+  cols=rep(NA, length(classlabels))
+  for (i in 1:length(classlabels)){
+    cols[which(dataset[,classfield]==classlabels[i])]=classcol[i]
+  }
+  
+  return(plot3d(outdata[,as.character(bandnames[1])],
+                outdata[, as.character(bandnames[2])], 
+                outdata[, as.character(bandnames[3])],
+                xlab=bandnames[1],
+                ylab=bandnames[2],
+                zlab=bandnames[3],
+                col=cols)) 
+  legend3d("topleft", legend = classlabels, 
+           pch = 16, col = classcol  , cex=1, inset=c(0.02))
+}
+```
+
+3. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class8/Lab8Materials"
+#dir.create(wd)
+setwd(wd)
+```
+
+4. Decompress, open and stack input image for classification. Below is the procedure for a Landsat image but this varies depending on the input information used for the analysis. At this point you should know how to open any image in R.
+```{r include = TRUE, message=F, warning=F}
+dir()
+
+L8name="LC08_L1TP_006066_20160804_20170322_01_T1"
+
+# Decompress and stack landsat image
+untar(paste(L8name, "tar", sep="."))
+
+meta=readMeta(paste(paste(L8name, "MTL", sep="_"), "txt", sep="."))
+L8=stackMeta(paste(paste(L8name, "MTL", sep="_"), "txt", sep="."))
+L8
+plotRGB(L8, r=5, g=4, b=3, stretch="lin")
+```
+
+5. Use the drawExtent() function to create an extent that includes approximately the specific study area (optional).
+```{r include = TRUE, message=F, warning=F}
+#e=drawExtent()
+e=extent(497000, 585000 , -992000, -898000)
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+
+# Remove objects to release memory
+rm(L8)
+```
+
+6. Convert pixel values from digital numbers to ground reflectance (optional). Perform topographic correction if needed (see instructions in lab 5).
+```{r include = TRUE, message=F, warning=F}
+haze=estimateHaze(L8rsz, hazeBands=1:5, 
+                  darkProp=0.001, plot=TRUE)
+
+L8dos=radCor(L8rsz, metaData=meta, 
+             method="sdos", hazeValues=haze, hazeBands=1:5)
+
+L8subset=L8dos[[2:7]] # Select the bands that you want to use for your analysis
+rm(L8dos)
+rm(L8rsz)
+```
+
+7. Calculate and plot spectral indices or band transformations (optional)
+```{r include = TRUE, message=F, warning=F}
+L8indices=spectralIndices(L8subset, blue=1, green=2,
+                          red=3, nir=4, swir2=5, swir3=6,
+                          indices=c("NDVI",  "NDWI", "NBRI")) # Spectral indices
+plotRGB(L8indices, r=1, g=2, b=3, stretch="lin")
+
+L8tascap=tasseledCap(L8subset, sat="Landsat8OLI") # Tasseled cap
+plotRGB(L8tascap, r=1, g=2, b=3, stretch="lin")
+L8all=stack(L8subset,L8indices, L8tascap)
+```
+
+8. Upload shapefile with training polygons and overlay them with the map. If the datasets do not overlay, it is likely due to a different projection between the raster and the vector files. In that case, the vector file should be reprojected
+```{r include = TRUE, message=F, warning=F}
+# This plots the last bands corresponding to the tasseled cap transformation but can be modified to any bands of interest
+calibdata=readOGR(".", "calibdataQGIS")
+plotRGB(L8all, r=10, g=11, b=12, stretch="lin") 
+plot(calibdata, add=T)
+
+# Check if the projections are the same
+crs(calibdata)
+crs(L8all)
+
+# If they are not the same, reproject the vector file
+calibdataPrj=spTransform(calibdata, crs(L8all))
+```
+
+9. Perform an unsupervised classification. As the number of classes, select the same number as the number classes considered in the collection of training polygons
+```{r include = TRUE, message=F, warning=F}
+unsupervised=unsuperClass(L8all, nClasses=7)
+plot(unsupervised$map, col=sample(colors(), 7))
+```
+
+10. Check the separability between different polygons visually. Write the name of the bands you want to plot in the plotSpectra() function. Add as many colors as the number of classes you have in your training data.
+```{r include = TRUE, message=F, warning=F}
+calibdataPrj # Check the name of the column with the class names and enter it in the clascolname argument below
+outdata=stack2df(inrast=L8all, invec=calibdataPrj,
+                 classcolname="Class.ID")
+length(unique(outdata$class_name)) # number of unique land cover classes in your training polygons
+
+# Create an object with the colors to assign to each land cover. The number of colors is equal to the number of unique classes identified for the study area (see previous line)
+classcolors= c("gray", "black", "green", "blue", "purple", "yellow", "cyan", "pink", "red")
+
+# plotSpectra should create a new window showing with a 3D depiction of the pixel values in three bands defined by the argument "bandnames" for all land cover classes
+names(outdata) # Check the names of the bands you want to graph in plotSpectra
+
+plotSpectra(dataset=outdata, bandnames=c("brightness", "greenness", "wetness" ), classfield=2,
+             classlabels=levels(outdata$class_name),
+             classcol=classcolors)
+ 
+# Make sure that the name in the legend coincides with the name of the column representing class names. In the example below is Class.ID
+#legend3d("topleft", legend= sort(unique(calibdataPrj$Class.ID)),
+#          col=classcolors,
+ #         pch=16, cex=1, inset=c(0.02))
+```
+
+11. Perform supervised classification
+```{r include = TRUE, message=F, warning=F}
+supervised=superClass(L8all, calibdataPrj, trainPartition=.8,
+                      responseCol = "Class.ID" )
+plot(supervised$map, col=classcolors)
+```
+
+12. Variable importance and accuracy assessment for the supervised classification
+```{r include = TRUE, message=F, warning=F}
+# retrieves variable importance from the supervised object
+supervised$model$finalModel$importance
+
+# retrieves the accuracy matrix
+supervised$validation$performance$table
+
+# retrieves producer's and user's accuracy from the supervised object
+accuresults=data.frame(supervised$validation$performance$byClass)
+users=accuresults$Pos.Pred.Val
+producers=accuresults$Recall
+overall=supervised$validation$performance$overall[1]
+classnames=attributes(supervised$validation$performance$byClass)$dimnames[[1]]
+classnames=str_remove(classnames, "Class: ")
+```
+
+13. Plot maps and figures
+```{r include = TRUE, message=F, warning=F}
+unsupercol=sample(colors(), 7) # These are the colors to be used for mapping the unsupervised map
+plot(unsupervised$map, col=unsupercol, axes=FALSE, legend=T, box=FALSE)
+
+# Interpret the names of the classes in the unsupervised map and assign them to each category number below:
+catnamesUnsup=c("River","Secondary", "Burnt", "Pasture", "Forest", "Lake", "Unvegetated" )
+
+pdf("VGutierrezLab8.pdf", paper="USr", width=15)
+
+# PLOT THE UNSUPERVISED CLASSIFICATION
+unsupercol=c("blue", "pink", "gray", "yellow", "green", "cyan", "red") # These are the colors to be used for mapping the unsupervised map. Try to make them intuitive
+plot(unsupervised$map, col=unsupercol, axes=FALSE, legend=F, box=FALSE)
+# Add north arrow, scalebar.
+
+# use catnames$category below if you are using a PC
+legend("topright", legend = catnamesUnsup,
+       fill = unsupercol, cex=0.7, bg="white")
+
+prettymapr::addnortharrow(pos="bottomright", scale = 0.6, padin=c(0.5,0.1),
+                          text.col = 'black', cols = c('black', 'black'))
+prettymapr::addscalebar(pos="bottomleft", plotunit = 'm', widthhint = 0.25, lwd = 1, 
+                        padin = c(0.5, 0.1), label.cex = 0.9)
+
+# PLOT THE SUPERVISED CLASSIFICATION
+# Retrieve the names of the different categories and 
+# the pixel values assigned to each one of them
+catnames=supervised$map@data@attributes[[1]]$value
+catnames
+# This defines the colors to assign to each catname
+# The colors are assigned to each class are in the same order as they 
+# appear in catnames. Make sure the colors are intuitive
+mapcol=c("pink", "green", "lightblue", "yellow", "blue", "gray", "red")
+
+plot(supervised$map, col=mapcol, axes=FALSE, legend=FALSE, box=FALSE)
+
+# use catnames$category below if you are using a PC
+legend("topright", legend = catnames,
+       fill = mapcol, cex=0.7, bg="white")
+
+# Add north arrow, scalebar.
+prettymapr::addnortharrow(pos="bottomright", scale = 0.6, padin=c(0.5,0.1),
+                          text.col = 'black', cols = c('black', 'black'))
+prettymapr::addscalebar(pos="bottomleft", plotunit = 'm', widthhint = 0.25, lwd = 1, 
+                        padin = c(0.5, 0.1), label.cex = 0.9)
+
+# PLOT PRODUCER'S AND USER'S ACCURACY
+barplot(rbind(users,producers),col=c("lightgreen","lightyellow"), 
+        names.arg=classnames,  beside = TRUE, ylab= "accuracy (%)")
+dev.off()
+```
+
+14. Save all data as R files and as Geotiffs
+```{r include = TRUE, message=F, warning=F}
+# To save data
+save(calibdataPrj, file="calibdata.RData") # save the polygons as an R object
+save(supervised, file="supervised.RData")
+save(unsupervised, file="unsupervised.RData")
+
+# To export spatial files in a format compatible with other applications
+writeOGR(calibdataPrj, dsn=getwd(), layer="calibdataPrj", # save polygons as shape file
+         driver="ESRI Shapefile")
+writeRaster(supervised$map, filename="supervised.tif", 
+            filetype="GTiff")
+writeRaster(unsupervised$map, filename="unsupervised.tif", 
+            filetype="GTiff")
+```
+
+## Lab 8 deliverables
+
+1.	Add three X, Y, Z figures from different angles of the spectral space obtained through the application of the “plotSpectra()” function with the three bands that are best to discriminate between the land cover categories selected. Make sure the axes are at an angle that optimizes the visualization of the contrast in pixel values between categories (1.5 pts).
+
+2.Upload in canvas a pdf file with the following figures:
+a. The maps corresponding to the results of the supervised classification with a legend, north arrow and scale bar and the bar graph with the results of the accuracy assessment. The colors of the maps should be intuitive (e.g. green for forest, blue for water) (3 pts).
+
+b. Three zoomed in images for one polygon per each land cover. The first image corresponds to an RGB color composite of the original satellite image, the second one will be the results of the  unsupervised classifcation and the third will be the results of the supervised classification. All the zoomed in images should include the outline of the polygon with no fill (2 pts). You can produce these figures in R or QGIS. Here is a way to do it in R:
+```{r include = TRUE, message=F, warning=F}
+# Select polygon of interest
+pdf("zoomedPoly.pdf")
+selPol=calibdataPrj[1,] # select one polygon per land cover class
+par(mfrow=c(1,3)) # split the plotting area in one row and three columns
+plotRGB(L8all, r=5, g=4, b=3, stretch="lin", ext=extent(selPol))
+plot(selPol, add =T)
+
+plot(supervised$map, col=mapcol, axes=FALSE, legend=FALSE, box=FALSE, ext=extent(selPol))
+plot(selPol, add =T)
+
+plot(unsupervised$map, col=unsupercol, axes=FALSE, legend=F, box=FALSE, ext=extent(selPol))
+plot(selPol, add =T)
+# Add polygons foor other classes
+dev.off()
+```
+3. Based on your visual interpretation of the classification results, please indicate which type of classification (unsupervised vs supervised) represents best the land covers of interest. Which land covers are better represented in the classification that you indicated as the best one? (0.25 pts)
+
+4. Analyze the accuracy matrix and the accuracy plot and briefly answer the questions below (1.25 pts):
+a)	Which class had the highest  producer’s  accuracy? Which one had the lowest?
+b)	What classes had the highest user’s  accuracy? Which one had the lowest?
+c)	For the class that had the lowest producer’s accuracy, what other land cover represents the largest confusion.
+d)	For the class that had the lowest user’s accuracy, what other land cover represents the largest confusion.
+e)	How do you think the classification can be improved?
+
+
+
+
+
+
+
+
+
+
+

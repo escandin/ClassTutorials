@@ -1,0 +1,304 @@
+---
+title: 'Spatial Analysis. Lab Week 12: Linear regression (diagnostics and evaluation)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+#fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+#fig2path=paste(wd, "Fig2Lab5.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Lab due
+April 12, 2023
+
+## Goal
+At the end of this lab, students will know:
+
+- To learn how to evaluate modeling assumptions in linear regression analysis through visual interpretation.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+### Background
+
+Please review the class materials for background on how to diagnose regression analysis.
+
+### Reference data
+For this lab we will use data from the UN-HDI to predict healthy life expectation using linear modeling. 
+
+You can download the .csv file associated to these datasets from the module "Datasets" in canvas. Please read the description and access the links to become familiar with the characteristics of the datasets.
+
+#### 0. Setup the environment and load data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module12_LinearRegression"
+setwd(wd)
+
+# This is an additional directory where I have the data stored
+datadir="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/Datasets"
+dir()
+
+hdi=read.csv(paste0(datadir, "/UNHDI_2020_w_Happiness.csv"))
+```
+
+### Results from previous lab
+Life expectancy vs. internet users
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+par(mfrow=c(2,2))
+
+#1. Extract variables of interest from the data
+response=hdi$Healthy.life.expectancy
+predictor=hdi$Internet.users..Total....of.population.
+
+#2. Create a dataframe with the extracted variables
+datasubset=data.frame(cbind(response,predictor))
+  
+#3. Remove observations with missing data
+datasubset=subset(datasubset, complete.cases(datasubset))
+
+plot(datasubset$response~datasubset$predictor, xlab="internet users", ylab="healthy life exp.")
+mod=lm(datasubset$response~datasubset$predictor)
+abline(mod)
+summary(mod)
+```
+
+Life expectancy vs. gender inequality index
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#1. Extract variables of interest from the data
+response=hdi$Healthy.life.expectancy
+predictor=hdi$Gender.Inequality.Index
+
+#2. Create a dataframe with the extracted variables
+datasubset=data.frame(cbind(response,predictor))
+  
+#3. Remove observations with missing data
+datasubset=subset(datasubset, complete.cases(datasubset))
+
+plot(datasubset$response~datasubset$predictor, xlab="gender inequality", ylab="healthy life exp.")
+mod2=lm(datasubset$response~datasubset$predictor)
+abline(mod2)
+summary(mod2)
+```
+
+Life expectancy vs. Logged.GDP.per.capita
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+
+#1. Extract variables of interest from the data
+response=hdi$Healthy.life.expectancy
+predictor=hdi$Logged.GDP.per.capita
+
+#2. Create a dataframe with the extracted variables
+datasubset=data.frame(cbind(response,predictor))
+  
+#3. Remove observations with missing data
+datasubset=subset(datasubset, complete.cases(datasubset))
+
+plot(datasubset$response~datasubset$predictor, xlab="log(GDP)", ylab="healthy life exp.")
+mod3=lm(datasubset$response~datasubset$predictor)
+abline(mod3)
+summary(mod3)
+```
+
+Compare model estimates
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(mod)
+summary(mod2)
+summary(mod3)
+```
+
+Build confidence intervals for the model. For details about how to calculate confidence intervals for a linear model, refer to here: https://rpubs.com/aaronsc32/regression-confidence-prediction-intervals 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(ggplot2)
+ggplot(data = datasubset, aes(predictor,response)) +
+geom_point() +
+geom_smooth(method="lm", color="red", fill = "blue")
+```
+
+### Regression diagnostics
+
+You can graph diagnostics scatterplots using the built-in plotting function for linear model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# You can read more about the function here:
+?plot.lm
+plot(mod3)
+```
+
+
+### Let's visualize different problems with synthetic data
+https://www.andrew.cmu.edu/user/achoulde/94842/homework/regression_diagnostics.html
+
+1. An ideal model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Simulate values for x following a uniform distribution
+n <- 1000      # sample size
+x <- runif(n, min = 0, max = 100)
+
+# And then y values following a linear relationship with x plus some noise added following a normal distribution
+y.good <- 3 + 0.1 * x + rnorm(n, sd = 3)
+
+# Scatterplot of the data with regression line overlaid. qplot is a fancier function to produce scatterplots than just plot()
+qplot(x, y.good, ylab = "y", main = "Ideal regression setup") + stat_smooth(method = "lm")
+
+lm.good <- lm(y.good ~ x)
+plot(lm.good)
+```
+
+2. A heteroskedastic model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# y data is generated with an increasing dispersion in error terms with higher values of x
+y.increasing <- 3 + 0.2 * x + (1 + x / 25) * rnorm(n, sd = 3)
+
+# Produce scatterplot of y vs x
+plot(y.increasing~x)
+abline(lm(y.increasing~x))
+summary(lm(y.increasing~x))
+plot(lm(y.increasing~x))
+```
+
+3.
+#### Load and format data
+In order to avoid having to create datasubsets to remove outliers from compared variables, we will select variables that have just a few NAs. In this case, we will load the data and then remove from the datasets all variales that have more than 15 NAs
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rm(list = ls()) # removes all objects from the session
+
+hdi=read.csv(paste0(datadir, "/UNHDI_2020_w_Happiness.csv"))
+summary(hdi)
+ncol(hdi)
+
+# This is the problem with removing NAs to all the dataset
+nrow(subset(hdi, complete.cases(hdi)))
+
+# Therefore we will select variables that have no more than 15 NAs
+# Count NAs per column
+sapply(hdi, function(x) sum(is.na(x)))
+hist(sapply(hdi, function(x) sum(is.na(x))))
+summary(sapply(hdi, function(x) sum(is.na(x))))
+
+# Identify columns with more than 15 NAs
+dropnames=names(which(sapply(hdi, function(x) sum(is.na(x)))>15))
+length(dropnames)
+
+# Remove those columns from DB:
+# The %in% operator in R is used to check if the values of the first 
+# argument are present in the second argument and returns a logical vector
+# indicating if there is a match or not for its left operand. 
+# https://sparkbyexamples.com/r-programming/usage-of-in-operator-in-r/
+hdi=hdi[ , -which(names(hdi) %in% dropnames)]
+ncol(hdi)
+nrow(hdi)
+
+# Remove rows with NAs in at least one variable
+hdi=subset(hdi, complete.cases(hdi))
+nrow(hdi)
+```
+
+### Exercise 1. linearity
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+mod1=lm((hdi$Human.Development.Index..HDI.~hdi$Gross.national.income..GNI..per.capita))
+summary(mod1)
+plot(hdi$Human.Development.Index..HDI.~hdi$Gross.national.income..GNI..per.capita)
+abline(mod1)
+plot(mod1)
+```
+
+Notice that the model is not representing the trend of the data. In some cases, we can make a transformation to data in order to represent a linear relationship
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Let's try with square root
+plot((hdi$Human.Development.Index..HDI.)~sqrt(hdi$Gross.national.income..GNI..per.capita))
+mod1a=lm((hdi$Human.Development.Index..HDI.~sqrt(hdi$Gross.national.income..GNI..per.capita)))
+abline(mod1a)
+summary(mod1a)
+plot(mod1a)
+
+# Let's try to logarithm
+plot((hdi$Human.Development.Index..HDI.)~log(hdi$Gross.national.income..GNI..per.capita))
+mod1b=lm((hdi$Human.Development.Index..HDI.~log(hdi$Gross.national.income..GNI..per.capita)))
+abline(mod1b)
+summary(mod1b)
+plot(mod1b)
+```
+
+### Exercise 2. extreme observations
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(hdi$TotalPop.2019..millions.~ hdi$Gross.Domestic.Product..GDP...Total..2019....billions.)
+mod4=lm(hdi$TotalPop.2019..millions.~ hdi$Gross.Domestic.Product..GDP...Total..2019....billions.)
+abline(mod4)
+summary(mod4)
+plot(mod4)
+
+# What if I remove the extreme observations?
+plot(hdi$TotalPop.2019..millions.[-c(1,60,63)]~ hdi$Gross.Domestic.Product..GDP...Total..2019....billions.[-c(1,60,63)])
+mod4a=lm(hdi$TotalPop.2019..millions.[-c(1,60,63)]~ hdi$Gross.Domestic.Product..GDP...Total..2019....billions.[-c(1,60,63)])
+abline(mod4a)
+summary(mod4a)
+plot(mod4a)
+```
+
+### Other examples
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plot(hdi$Current.health.expenditure....of.GDP.~ hdi$Gross.Domestic.Product..GDP...Per.Capital..2017....)
+mod5=lm(hdi$Current.health.expenditure....of.GDP.~ hdi$Gross.Domestic.Product..GDP...Per.Capital..2017....)
+abline(mod5)
+summary(mod5)
+plot(mod5)
+
+plot(hdi$Health..Quality..Physicians..per.10.000.people.~hdi$Gross.national.income..GNI..per.capita)
+mod6=lm(hdi$Health..Quality..Physicians..per.10.000.people.~hdi$Gross.national.income..GNI..per.capita)
+abline(mod6)
+summary(mod6)
+plot(mod6)
+```
+
+### Lab report
+1. Expore the names of variables available at the UN-HDI dataset. Then Develop a hypothesis about causal explanations relating two variables of interest. 
+
+    1a. What are the selected variables 
+
+    1b. What is the expected relationship. Do you expect a linear correlation? Do you expect the             relationship to be positive or negative? 
+
+    1c. What mechanism do you think could explain that type of relationship?
+
+Hint: You can produce a list with the names of the variables by using the function names(). 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(hdi)
+
+# To list the names in alphabetical order:
+sort(names(hdi))
+```
+
+   
+2. Produce a linear regression and provide the following information
+
+    2a. A scatterplot including the regression line 
+
+    2b. The summary of the regression results as produced in R (>summary(mod))
+
+    2c. An interpretation of the regression results in terms of i) the R2 and its p-level, ii) the parameter estimate and its p-level
+
+3. Produce a series of diagnostics graphs for the model (>plot(mod)). Interpret each graph to  diagnose:
+
+    3a. linearity of errors
+
+    3b. heteroskedasticity
+
+    3c. extreme observations
+
+4. Based on your analysis above, assess the suitability and robustness of the model.
+
+

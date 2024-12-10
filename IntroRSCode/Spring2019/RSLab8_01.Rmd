@@ -1,0 +1,243 @@
+---
+title: 'Remote Sensing Lab 8: Supervised and Unsupervised classification'
+
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class8/Lab8Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(kableExtra)
+knitr::opts_knit$set(root.dir = wd)
+#knitr::knit(input=wd, output=wd)
+```
+
+## Lab due
+April 3 2019
+
+## Goals
+1. To learn graphical approaches to assess class separability for land cover classification.
+2. To learn methods for supervised and unsupervised image classification and their implementation in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and manipulating images in R are already mastered and therefore are not explained in detail here. Refer to previous labs if there is any problem with those procedures.
+
+1. Open R Studio, open a new R script and change the route to your working directory in the script using the function setwd().
+
+4. Copy and paste each chunk of code in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+5.	Answer the questions in the answer sheet and submit it along with the required pdf file to canvas.
+
+Have fun!
+
+1. Load required libraries.
+```{r include = TRUE, message=F, warning=F}
+library(raster)
+library(rgdal)
+library(RStoolbox)
+library(rgl)
+```
+
+2. Load the three functions below. The first two,  I created for visual separability assessment. The third one comes from the internet for a quantitative analysis of separability.
+```{r include = TRUE, message=F, warning=F}
+stack2df=function(inrast=rastack, invec=polygons,  
+                  classcolname="Class")
+  {
+                 # na.rm=TRUE, stackmask=msk){
+  # extracts into a data frame the pixel values for all bands from different classes
+  # defined in a spatialpolygon dataframe
+  # na.rm removes all pixels that have NAs in at least one rastack band
+  
+  # required functions
+  stackmask= function(inrast=inrast, ranges=c(-Inf,1,NA, 1,99999,1)){
+    # masks out any pixels that have no valid information in at least 1 band in a raster stack
+    # mask input image
+    ranges=matrix(ranges)
+    msk=reclassify(inrast,ranges)
+    msk=max(msk)
+    rastack=inrast*msk
+    return(inrast)
+  }
+  
+  extractval=function(inraster=inrast, msk=msk){
+    outvector=inraster*msk
+    outvector=na.omit(getValues(outvector))
+    return(outvector)
+  }
+  
+  # assign class ID to each class
+  invec$class_ID=rep(NA, nrow(invec@data))
+  for (i in 1:length(invec[[classcolname]])){
+    invec$class_ID[which(invec[[classcolname]]==levels(invec[[classcolname]])[i])]=i
+  }
+  # create a raster of class_ids
+  calibrast=rasterize(invec, inrast[[1]], field=invec$class_ID)
+  
+  ranges=matrix(c(-Inf,.99,NA, 1,99999,1))
+  calibmsk=reclassify(calibrast,ranges)
+  
+  # if (na.rm==TRUE) {
+  #   rastack=stackmask(rastack)
+  #   calibmsk=calibmsk*rastack
+  # }
+  
+  # Extract pixel values into a dataframe
+  class_ID=(extractval(calibrast, calibmsk))
+  dataset=data.frame(matrix(data=NA, nrow=length(class_ID), ncol=nlayers(inrast)))
+  
+  # add a column with a class name
+  dbclassname=rep(NA, length(class_ID))
+  for (i in 1:length(levels(invec[[classcolname]]))){
+    dbclassname[which(class_ID==i, arr.ind=TRUE)] = levels(invec[[classcolname]])[i]
+  }
+  dataset=cbind(class_ID, dbclassname, dataset)
+  rm(class_ID, dbclassname)
+  
+  for (i in 1:nlayers(inrast)){
+    dataset[,i+2]=extractval(inrast[[i]], calibmsk)
+  }
+  names(dataset)=c("class_ID", "class_name", names(inrast))
+  return(dataset)
+}
+
+plotSpectra=function(dataset=outdata, bandnames=c("B3_dn", "B4_dn", "B5_dn"),
+                     classfield=1, classlabels= levels(dataset[,classfield]),
+                     classcol=sample(colors(), size=length(classlabels))){
+  #Assign colors to different labels
+  cols=rep(NA, length(classlabels))
+  for (i in 1:length(classlabels)){
+    cols[which(dataset[,classfield]==classlabels[i])]=classcol[i]
+  }
+  
+  return(plot3d(outdata[,as.character(bandnames[1])],
+                outdata[, as.character(bandnames[2])], 
+                outdata[, as.character(bandnames[3])],
+                xlab=bandnames[1],
+                ylab=bandnames[2],
+                zlab=bandnames[3],
+                col=cols)) 
+  legend3d("topleft", legend = classlabels, 
+           pch = 16, col = classcol  , cex=1, inset=c(0.02))
+}
+```
+
+2. Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE, message=F, warning=F}
+wd="/Users/Victor/Documents/Courses/IntroRemoteSensing/2019Spring/Class8/Lab8Materials"
+#dir.create(wd)
+setwd(wd)
+```
+
+3. Decompress, open and stack input image for classification. Below is the procedure for a Landsat image but this varies depending on the input information used for the analysis. At this point you should know how to open any image in R.
+```{r include = TRUE, message=F, warning=F}
+dir()
+
+L8name="LC08_L1TP_006066_20160804_20170322_01_T1"
+
+# Decompress and stack landsat image
+untar(paste(L8name, "tar", sep="."))
+
+meta=readMeta(paste(paste(L8name, "MTL", sep="_"), "txt", sep="."))
+L8=stackMeta(paste(paste(L8name, "MTL", sep="_"), "txt", sep="."))
+L8
+plotRGB(L8, r=5, g=4, b=3, stretch="lin")
+```
+
+4. Use the drawExtent() function to create an extent that includes approximately the specific study area (optional).
+```{r include = TRUE, message=F, warning=F}
+#e=drawExtent()
+e=extent(511000, 584000 , -992000, -918000)
+L8rsz=crop(L8, e)
+plotRGB(L8rsz, r=5, g=4, b=3, stretch="lin")
+
+# Remove objects to release memory
+rm(L8)
+```
+
+6. Convert pixel values from digital numbers to ground reflectance (optional)
+```{r include = TRUE, message=F, warning=F}
+haze=estimateHaze(L8rsz, hazeBands=1:5, 
+                  darkProp=0.001, plot=TRUE)
+
+L8dos=radCor(L8rsz, metaData=meta, 
+             method="sdos", hazeValues=haze, hazeBands=1:5)
+
+L8subset=L8dos[[2:7]]
+rm(L8dos)
+rm(L8rsz)
+```
+
+7. Calculate and plot spectral indices or band transformations (optional)
+```{r include = TRUE, message=F, warning=F}
+L8indices=spectralIndices(L8subset, blue=1, green=2,
+                          red=3, nir=4, swir2=5, swir3=6,
+                          indices=c("NDVI",  "NDWI", "NBRI")) # Spectral indices
+plotRGB(L8indices, r=1, g=2, b=3, stretch="lin")
+
+L8tascap=tasseledCap(L8subset, sat="Landsat8OLI") # Tasseled cap
+plotRGB(L8tascap, r=1, g=2, b=3, stretch="lin")
+```
+
+8. Perform an unsupervised classification.As the number of classes, select the same number as the number classes considered in the collection of training polygons
+```{r include = TRUE, message=F, warning=F}
+unsupervised=unsuperClass(L8tascap, nClasses=7)
+plot(unsupervised$map, col=sample(colors(), 7))
+```
+
+9. Upload shapefile with training polygons
+```{r include = TRUE, message=F, warning=F}
+calibdata=readOGR(".", "calibdata")
+```
+
+10. Check the separability between different polygons visually. Write the name of the bands you want to plot in the plotSpectra() function. Add as many colors as the number of classes you have in your training data.
+```{r include = TRUE, message=F, warning=F}
+outdata=stack2df(inrast=L8tascap, invec=calibdata,
+                 classcolname="Class")
+classcolors= c("gray", "green", "blue", "yellow", "cyan", "purple", "red")
+# plotSpectra(dataset=outdata, bandnames=c("brightness", "greenness", "wetness" ), classfield=2,
+#             classlabels=levels(outdata$class_name),
+#             classcol=classcolors)
+# 
+# legend3d("topleft", legend= sort(unique(calibdata$Class)),
+#          col=classcolors,
+#          pch=16, cex=1, inset=c(0.02))
+```
+
+12. Check the separability between different polygons using quantitative methods
+```{r include = TRUE, message=F, warning=F}
+
+```
+13. Perform supervised classification
+```{r include = TRUE, message=F, warning=F}
+supervised=superClass(L8tascap, calibdata, trainPartition=.8,
+                      responseCol = "class" )
+plot(supervised$map, col=c("gray", "green", "blue", "yellow", "cyan", "purple", "red"))
+```
+14. Plot the unsupervised and the supervised classification maps
+```{r include = TRUE, message=F, warning=F}
+
+```
+
+## Lab 8 deliverables
+
+1.	Add three X, Y, Z figures from different angles of the spectral space obtained through the application of the “plotSpectra” function with the three bands that are best to discriminate between the land cover categories selected. Make sure the axes are at an angle that optimizes the visualization of the contrast in pixel values between categories (1.5).
+
+2.	Use the table format below to report the results of the spectral separability analysis performed through the application of the JM distance function. Review the slides from the class and describe the meaning of the results in terms of separability as separable, potentially separable, non-separable) and the decision made for each land cover category. Options are:
+1) include, 
+2) collect more training data or 
+3) merge (indicate what land cover will absorb the other or whether a new class name will be created, more training data, no change (1.5).
+INSER TABLE!!!!
+
+3.Paste below zoomed in images for one polygon representing each land cover. For each polygon plot three images. The first one corresponds to an RGB color composite as the background, the second one will be the results of the merged unsupervised classifcation and the third will be the results of the supervised classification. All the zoomed in images should include the outline of the polygon.
+

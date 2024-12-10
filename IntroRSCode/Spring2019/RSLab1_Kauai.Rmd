@@ -1,0 +1,135 @@
+---
+title: 'Remote Sensing Lab 1: Downloading, importing and visualizing spatial data
+  in R'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+## Lab due
+January 23 2019
+
+## Goal
+To become familiar with basic functions for data downloading, projection and mapping in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Downloading and opening R and R Studio
+The instructions below are adapted from here (https://www.andrewheiss.com/blog/2012/04/17/install-r-rstudio-r-commander-windows-osx/)
+
+### In Windows
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Windows” > “base” > “Download R X.X.X for Windows” (latest version). You can also click on "Installation and other instructions for further details.
+2. Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop and install it. Leave all default settings in the installation options.
+
+### In Mac
+1.	Download R from http://cran.us.r-project.org/ (click on “Download R for Mac OS X” > “R-X.X.X.pkg” (latest version).
+2.	Follow the instructions to install R. Leave all default settings in the installation options.
+3.	Download RStudio from http://rstudio.org/download/desktop.
+4.	Install RStudio by dragging the application icon to your Applications folder.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructios below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+3. If the code runs, follow the instructions at then end to change it so that it produces similar results but for the island of Oahu instead of Kauai. Most of the adjustments consist of changing the links to the data sources to download and the names of some objects. Please make sure you spell everyting curreclty. Do not to modify anything else including parenthesis or quotation marks, otherwise the code will not run. 
+4.	Save the map with the DEM and roads printed as a pdf file in canvas.
+
+Have fun!
+
+## Lab activities
+### System setup
+Load required libraries.
+```{r include = TRUE}
+library(rasterVis)
+library(raster)
+library(rgdal)
+library(plot3D)
+```
+
+ libraries for the first time, use install.packages("library name")
+Set working directory: Change the path below by copying and pasting the route to any selected folder in your workstation. If you are using a windows machine, make sure you use forward slash instead of backward
+```{r include = TRUE}
+setwd("/Users/Victor/Gitrepo/IntroRSCode")
+```
+
+### Download, unzip and plot spatial data for the island of Kauai
+
+Step 1: Run the script below to download data from the island of Kauai.
+```{r include = TRUE}
+downloadURL=("ftp://soest.hawaii.edu/coastal/webftp/Kauai/dem/Kauai_DEM.zip")
+filename="Kauai_DEM.zip"
+download.file(downloadURL, filename)
+```
+
+Step 2: Unzip the file for Kauai, open it as a raster in R and plot it. You will see the "DEM" object loaded in the Environment on the upper right panel in R studio.
+```{r include = TRUE}
+unzip(filename)
+DEM=raster("kaui_dem")
+plot(DEM)
+```
+
+Step 3 Create a perspective plot. Change theta and phi values to rotate the image as desired
+```{r include = TRUE}
+persp(DEM)
+persp(DEM, theta=60, phi=0) 
+```
+
+Step 4: Plot an interactive DEM and rotate it.  NOTE: If you are using a mac machine, you will have to install xcode to execute the plot3D function. You can download it from here: https://developer.apple.com/xcode/ . You will need to restart your machine after installation.
+```{r include = TRUE}
+plot3D(DEM, zfac=1)
+```
+
+Step 5. Download, unzip and open a shapefile with the streets in Kauai. You will see the "streets" object loaded in the global environment on the upper right panel of R studio.
+```{r include = TRUE}
+downloadURL=("https://opendata.arcgis.com/datasets/4b839c5788e644d8b50a4b156beb02a0_4.zip")
+filename="Roads__Kauai_County.zip"
+download.file(downloadURL, filename)
+unzip(filename)
+streets=readOGR(".", "Roads__Kauai_County")
+```
+
+Step 6. Compare the projection of the DEM and streets files. You will see that the DEM object is in UTM while the streets object is in lat/long projection. The function spTransform below will reproject streets to the spatial attributes of DEM. Notice that the streetsPrj object have now the same projection as the DEM object.
+```{r include = TRUE}
+crs(DEM)
+crs(streets)
+streetsPrj=spTransform(streets, crs(DEM))
+```
+
+Step 7. Plot a map with both the raster DEM and the vector layer with streets.
+```{r include = TRUE}
+plot(DEM)
+plot(streetsPrj, col='black', add=T)
+```
+
+Step 8. save the plot as PDF in your working folder
+```{r include = FALSE}
+pdf("VGutierrez_Lab1.pdf")
+  plot(DEM)
+  plot(streetsPrj, col='black', add=T)
+dev.off()
+```
+
+## Deliverables
+Edit the code in steps 1 to 5 in order to download, unzip, import and plot a map with the DEM and roads for the island of Oahu instead of Kauai. Below are detailed instructions for each step:
+
+Step 1: Change the URL in the downloadURL funtion to download data from the island of Oahu instead of Kauai. Browse this site http://www.soest.hawaii.edu/coasts/data/ and find the Coastal Imagery data for Oahu. Then click on the "DEM"" link. In the new page, locate your mouse on the "10m_DEM"" link and right click on it. 
+
+Copy the link and paste it in the downloadURL object to replace the one for the island of Oahu. Also copy the name that appears after the last / in the link and paste it in the filename object to replace the one for Kauai. Make sure you do not change anything else, particularly parentheses and quotation marks and run it again!
+
+Steps 2: Change the word "kauai" for "oahu" in the DEM object and run it again.
+
+Steps 3 and 4: Run the code again to graph both types of perspective plots for Oahu. Then  compare the new results with the ones you obtained previously for the island of Oahu
+
+Step 5: Go to this link http://geoportal.hawaii.gov. Scroll down and click on the transportation data category and find the link to the major roads for Oahu. Click on the download button and right click on the Shapefile option. Copy the link and paste it in downloadURL object to replace the one for the island of Oahu.
+
+Change also the filename "Roads__Kauai_County.zip" for "Major_Roads__Oahu_Honolulu_County.zip" ad also the name in the streets object from "Roads__Kauai_County" to "Major_Roads__Oahu_Honolulu_County". Make sure to not change anything else in the code, specially the parenthesis and the "". Run the code chunk to download the street data from Oahu.
+
+Steps 6-7: Run the code as it is. 
+
+Step 8: Change the name of the pdf file for your Last name First initial and the name of the assignment ("GutierrezV_Lab1.pdf"").
+
+Go to your working directory and identify the pdf file. Save the edited code (File/Save As...) and upload it, along with the DEM + street map as an assignment for class 1 in Canvas (Upload Lab 1 here).

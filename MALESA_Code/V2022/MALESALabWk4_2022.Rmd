@@ -1,0 +1,309 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 4: Data Preparation'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Sep 19 2022
+
+## Goal
+To learn the basic steps for data collection and preparation
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+In this lab we will implement a workflow described in class for data collection and preparation. We will download and process data that can be used to predict the spatial distribution of Aedes albopictus, a mosquito vector that can transmit several diseases including Zika, Dengue and Chinkunguya. The data will be downloaded for the South East of the State of Pennsylvania collected by the Department of Environmental Protection. Sampling consisted of the collection of mosquito specimens in different locations throughout the state using different traps. Covariates will be derived from publicly available climatic, land use, socioeconomic and ecological data.
+
+Have fun!
+
+### System setup
+Define working directory and load required libraries. Install libraries as needed.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week4")
+setwd(wd)
+library(sf)
+#install.packages("prism")
+library(tidycensus)
+library(tigris)
+library(tmap)
+library(prism)
+library(maptools)
+prism_set_dl_dir(wd)
+library(terra)
+library(geodata)
+library(mapview)
+```
+
+### Downloading, loading, and reformatting data
+
+#### Response variable data
+Download the mosquito dataset from canvas and load it to R.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dataset=read.csv("DatasetMOD.csv") #Mosquito samples
+head(dataset)
+class(dataset$COLLECTED)
+```
+
+We can see that "COLLECTED" corresponds to the date of data sampling but it is read by R as a character. Let's convert it into a date format.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dataset$COLLECTED = as.Date(dataset$COLLECTED,"%m/%d/%y")
+class(dataset$COLLECTED)
+nrow(dataset)
+```
+
+Let's select the data collected in 2015.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datasubset=dataset[dataset$COLLECTED >= "2015-01-01",]
+nrow(datasubset)
+```
+
+Now, let's convert the dataset into a spatial object using the sf package. Then convert it into vector format from the terra package so that we can operate it with raster data later.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(datasubset)
+SpatData=st_as_sf(datasubset, coords=c("LONGITUDE", "LATITUDE"), crs=st_crs("EPSG:4326"))
+plot(SpatData["COLLECTED"], type="p", pch=4)
+st_crs(SpatData)
+SpatData=vect(SpatData)
+plot(SpatData)
+```
+
+Evidently, there is an observation that is out of bounds.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+data(wrld_simpl)
+plot(wrld_simpl, xlim=c(-35,50), ylim=c(-60,60), axes=TRUE, col="light yellow")
+plot(SpatData, col="red", add=T)
+```
+
+Let's check which one it is: 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datasubset[datasubset$LONGITUDE>50,]
+```
+
+You can see that the point has a positive longitude (that is a very common mistake). Let's change it to a negative value and convert it into a spatial object again.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datasubset$LONGITUDE[datasubset$LONGITUDE>50]=-datasubset$LONGITUDE[datasubset$LONGITUDE>50]
+SpatData=st_as_sf(datasubset, coords=c("LONGITUDE", "LATITUDE"), crs=st_crs("EPSG:4326"))
+SpatData=vect(SpatData)
+data(wrld_simpl)
+plot(wrld_simpl, xlim=c(-35,50), ylim=c(-60,60), axes=TRUE, col="light yellow")
+plot(SpatData, col="red", add=T)
+```
+
+#### Elevation data
+Download raster data sets representing elevation using the geodata package. As we saw in the previous lab, elevation files cover an area of 5x5 degrees. Identify the geographic extent covered by the mosquito data and select the elevation datasets that cover such an area. Merge all elevation objects into a single raster. Plot the data to make sure the elevation mosaic covers the whole extent of the data points.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ext(SpatData)
+elev=elevation_3s(-72, 38, wd)
+elev2=elevation_3s(-77, 38, wd)
+elev3=elevation_3s(-72, 42, wd)
+elev4=elevation_3s(-77, 42, wd)
+elev=merge(elev, elev2, elev3, elev4)
+plot(elev)
+plot(SpatData, add=T)
+rm(elev2, elev3, elev4)
+```
+
+Let's resize the elevation dataset to only include pixels within the extent of the mosquito data.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+elev=crop(elev, ext(SpatData))
+#elev=rast("elev.tif")
+plot(elev)
+plot(SpatData, add=T)
+writeRaster(elev, "elev.tif")
+```
+
+We can derive different topographic metrics from the elevation file using the terrain() function from the terra package.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tervar=terrain(elev, v=c("slope", "aspect", "roughness", "TRI", "TPI", "flowdir"), filename="tervar.tif")
+names(tervar)=c("slope", "aspect", "roughness", "TRI", "TPI", "flowdir")
+```
+
+#### Land cover data
+We will download data from the National Land Cover Dataset:https://www.usgs.gov/centers/eros/science/national-land-cover-database. If you obtain an error or warning while downloading or unzipping (e.g. "possible truncation"), that means that the file is too large or there is a time out issue and therefore both steps should be done manually.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+download.file("https://s3-us-west-2.amazonaws.com/mrlc/nlcd_2016_land_cover_l48_20210604.zip", paste(wd, "nlcd_2016_land_cover_l48_20210604.zip", sep="/"))
+unzip("nlcd_2016_land_cover_l48_20210604.zip")
+
+nlcd=rast("nlcd_2016_land_cover_l48_20210604.img")
+plot(nlcd)
+crs(nlcd)
+nlcd1=project(nlcd, elev, method="near")
+plot(nlcd1)
+writeRaster(nlcd1, "nlcd1.tif")
+```
+
+#### Climate data
+We will use the library geodata to download climatic metrics from prism: https://prism.oregonstate.edu
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+#st_bbox(SpatData)
+get_prism_annual(type="tmin", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="tmax", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="tmean", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="tdmean", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="vpdmin", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="vpdmax", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+get_prism_annual(type="ppt", years = 2015, keepZip = TRUE, keep_pre81_months = FALSE)
+```
+
+Let's import and plot one of the climate datasets to make sure they are operable. This code might be modified depending on whether your computer is set to automatically decompress files into a folder.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir()
+prisms <- list.files('.', pattern='_stable_4kmM3_2015_bil')
+for (i in seq(1,length(prisms), by=2)){
+  prisrast=rast(paste(wd, prisms[i], paste(prisms[i], "bil", sep="."), sep="/"))
+  prisrast=project(prisrast, elev)
+  if(i==1){pristack=prisrast} else {pristack=c(pristack, prisrast)}
+}
+names(pristack)=substr(prisms[seq(1,length(prisms), by=2)], start=7, stop=10)
+writeRaster(pristack, "pristack.tif")
+plot(pristack)
+```
+
+#### Census data
+We will use the tidycensus package to download US census data. Some of the description and code is obtained from here: http://walker-data.com/umich-workshop/census-data-in-r/slides/#7 . And also from here: https://rpubs.com/tylersimko/tutorial_census 
+
+To use tidycensus, you will need a Census API key. Visit https://api.census.gov/data/key_signup.html to request a key, then activate the key from the link in your email.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+census_api_key("YOUR API KEY GOES HERE", install = TRUE)
+readRenviron("~/.Renviron")
+```
+
+To see the variables available to you in a particular survey, you can use the load_variables() function. The function takes arguments for the year you are interested in, the survey (Census or ACS). You can also find these lists on the Census website (https://api.census.gov/data/2019/acs/acs5/variables.html) on individual pages for each survey like this for the 2019 ACS - https://www.census.gov/data/developers/data-sets/acs-5year.html ). 
+
+Let’s look at all available variables from the ACS 2015 5-year estimates:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+acs2015 <- load_variables("2015", "acs5", cache = TRUE)
+View(acs2015)
+```
+
+Let's visualize the data:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+county_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001", 
+  state = "PA", geometry=TRUE)
+mapview(county_income, zcol = "estimate")
+class(county_income)
+View(county_income)
+```
+
+Then convert the file into terra format, reproject it and rasterize it.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+county_income1=vect(county_income)
+ci_prj=project(county_income1, elev)
+ci_rst=rasterize(ci_prj, elev, field="estimate")
+```
+
+### Produce a stack with all formatted data rasters and save it
+First we stack all data into single raster object:
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datastack=c(pristack, elev, tervar, nlcd1, ci_rst)
+names(datastack)=c(names(pristack), "elevation", names(tervar), "LC", "income")
+writeRaster(datastack, "datastack.tif")
+```
+
+### Produce pseudo-absences for cases when only presence data is available (OPTIONAL)
+First we are going to define the study area as the census tracts that are located within the extent of the sampling data. We will use the polygons obtained for county income as the reference and then dissolve all polygons into one. 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+ci_prj_rsz=crop(ci_prj, SpatData)
+plot(ci_prj_rsz)
+studyArea=st_union(sf::st_as_sf(ci_prj_rsz))
+plot(studyArea)
+```
+
+Then we are going to produce a sample with the same number of points as the reference data. In this case I will eliminate observations that have a value of zero for randomly generated ones
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# First, I will eliminate from the original dataset all observations equal to zero. THIS STEP IS NOT NECESSARY IF YOU DO NOT HAVE ABSENCE DATA IN YOUR DATASET
+datasubset=datasubset[which(datasubset$ADULTS>0),]
+SpatData=SpatData[which(SpatData$ADULTS>0),]
+samp=st_sample(studyArea, size=nrow(SpatData))
+
+# Plot the data to ensure that the procedure was succesful
+plot(samp, cex=0.1)
+plot(SpatData, col="red", add=T)
+samp=vect(samp)
+
+# Check that the size of the random points is the same as the reference data
+nrow(samp)
+nrow(SpatData)
+```
+
+### Extract data from reference and sampled datasets
+Create a field for the response variable with the same name as the first field of the reference data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+
+################## refdata
+refdata=extract(datastack, SpatData)
+nrow(refdata)
+nrow(datasubset)
+refdata=cbind(datasubset, refdata)
+
+#create response variable
+refdata$PRESENCE=rep(1, nrow(refdata))
+
+################## sampdata
+# Create a dataframe for the sample data with the same attributes as the reference dataset. 
+sampdata=terra::extract(datastack, samp, xy=TRUE)
+sampAppend=datasubset[,1:(ncol(datasubset))]
+names(sampAppend)
+sampAppend[,]=NA
+
+# Append rows that have the same attributes as the reference data to the sampled points
+#create response variable
+sampdata$permits=rep(0, nrow(sampdata))
+sampAppend$LATITUDE=sampdata$y
+sampAppend$LONGITUDE=sampdata$x
+
+sampdata=cbind(sampAppend, sampdata[,-c(22, 23)] )
+
+# Check any variable names that do not coincide
+names(sampdata)==names(refdata)
+
+# Assign the same variable names after recoinciling any inconsistencies.
+names(sampdata)=names(refdata)
+
+alldata=rbind(refdata,sampdata)
+
+save(alldata, file="alldata.RData")
+write.csv(alldata, file="alldata.csv")
+
+```
+
+## Lab deliverables (due on Sep 19)
+
+1. Complete the following form with questions regarding your final project: https://forms.office.com/r/8vJgfs8qM7 (1 pts)
+
+2. Download the data that you will use to represent the predicting variable and at least five datasets that you believe can be strong predictors. You can check some datasets  and R packages available here: https://tuprd-my.sharepoint.com/:x:/g/personal/tug61163_temple_edu/Eedslt7IVsJDuAwGHIyhVtkBVhw-6KV8SFZCHynaVxAI7A?e=vLg9rI 
+
+3. Adapt the workflow described here to produce a raster stack with all the predictors and the response variable if applicable.
+
+4. Produce a database in .csv format with the values of the variables associated to the response variables
+
+5. Upload to canvas, a PDF with the maps representing each one of the variables (1.5 pts) and the database in csv format (1.5 pts).

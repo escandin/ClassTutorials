@@ -1,0 +1,210 @@
+---
+title: 'Spatial Analysis. Lab Week 5: Confidence'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+fig2path=paste(wd, "Fig2Lab5.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+Feb 22 2023
+
+## Goals
+At the end of this lab, students will know:
+
+-How to differentiate between calculating the probabilty associated to different values and ranges of normally distributed random variables versus the confidence about the estimation of a population mean.
+
+-How to construct confidence intervals for a larger and smaller sample means and for proportions
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+#### Setting up the environment
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/2023Spring/Module5_Confidence")
+setwd(wd)
+dir()
+```
+
+#### Background
+The base package in R has functions that enable to represent different characteristics of a probability density function. For normal distributions, those functions are pnorm, dnorm, qnorm and rnorm. The figure below represents what aspects of the distribution each one of these functions represent (https://r-coder.com/normal-distribution-r/):
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig1path)
+```
+
+#### Excercise 1: probability of occurrence for observations
+Census data shows that the average median household income for Philadelphia County is 50k (in dollars) with a standard deviation of 10k. A random sample of 40 house owners were surveyed. What is the probability that the average median income of these 40 respondents is more than 60k? Include a figure with a curve and add the line representing the quantile and the associated probability level.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Variables: ask them to take a look at the diagram   
+meanHHinc=50000
+sdHHinc=10000
+q=60000
+
+# These are the same results
+1-pnorm(q, meanHHinc, sdHHinc)
+p=pnorm(q, meanHHinc, sdHHinc, lower.tail=FALSE)
+
+# Plot
+y=seq(meanHHinc-(3*sdHHinc), meanHHinc+(3*sdHHinc), by =1)
+probval=dnorm(y, meanHHinc, sdHHinc)
+
+pdf("exercise1.pdf")
+plot(y, probval, type="l")
+abline(v=q, col="red")
+abline(h=dnorm(q, meanHHinc, sdHHinc), col="green")
+dev.off()
+```
+
+#### Excercise 2: confidence intervals for larger sample means
+Calculate the 90% Margin of Error Bounds (or the confidence interval) of average median household income of all Philadelphians when the mean median household income of 40 randomly selected house owners was 50k (in dollars) with a standard deviation of 10k. Include a figure in pdf representing the range of household income values reprsented by this confidence interval
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+n=40
+CIlow=meanHHinc-qnorm(0.95)*sdHHinc/sqrt(n)
+CIhi=meanHHinc+qnorm(0.95)*sdHHinc/sqrt(n)
+
+#Graphically
+# Simulate numbers
+y=seq(meanHHinc-(3*sdHHinc), meanHHinc+(3*sdHHinc), by =100)
+probval=dnorm(y, meanHHinc, sdHHinc)
+
+pdf("exercise2.pdf")
+plot(y, probval, type="l")
+abline(v=CIlow, col="red")
+abline(v=CIhi, col="green")
+dev.off()
+```
+
+#### Excercise 3: confidence intervals for smaller sample means with unknown standard deviation
+Calculate the 90% Margin of Error Bounds (or the confidence interval) of the example above but assuming that the number of randomly selected house owners was 15 How does the estimate compare to the one obtained above?  Add a figure in pdf and your interpretation.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+n=15
+tCIlow=meanHHinc-qt(0.95, df=n-1)*sdHHinc/sqrt(n)
+tCIhi=meanHHinc+qt(0.95, df=n-1)*sdHHinc/sqrt(n)
+
+#Graphically
+y=seq(meanHHinc-(3*sdHHinc), meanHHinc+(3*sdHHinc), by =100)
+zy=(mean(y)-y)/sd(y)
+#zCIlow=(mean(y)-CIlow)/sd(y)
+#zCIhigh=(mean(y)-CIhi)/sd(y)
+probval=dt(zy, df=n-1)
+
+pdf("exercise3.pdf")
+plot(y, probval, type="l")
+abline(v=tCIlow, col="red")
+abline(v=tCIhi, col="green")
+dev.off()
+```
+
+#### Excercise 4: confidence intervals for proportions
+
+The confidence interval of proportions can be approximated with this formula:
+
+```{r include = TRUE, echo=FALSE}
+# echo omits the printing of anything within the chunk 
+include_graphics(fig2path)
+```
+
+Where p is the value of the proportion, z is the probability value associated to such proportion assuming a standard normal distribution, and n is the sample size.
+
+Remember that this approximation is valid as long as these conditions are met:
+i.	Samples are independent
+ii.	The sample size is sufficiently large, but not larger than 5% of the total population.
+iii.	np ≥ 10 and n(1-p) ≥ 10. p is the population proportion.
+
+
+Suppose 500 TU students were randomly selected and asked if they prefer in-person classes to online. 300 answered ‘yes’. Calculate a 95% confidence interval for the proportion of TU students who prefer in-person classes.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+n=500
+p=300/n
+CI=0.95
+
+# Let's test the assumptions:
+#i. samples are randomly selected so yes.
+#ii. The sample size is large but smaller than 5% of population (assuming that Temple student population is 30k)
+#iii.
+n*p
+n*(1-p)
+
+# All assumptions are met so:
+
+CIlow=p-qnorm(0.975)*sqrt(p*(1-p)/n)
+CIhi= p+qnorm(0.975)*sqrt(p*(1-p)/n)
+```
+
+## Lab deliverables
+
+Copy and paste the questions below in a word document. Then record your answers in the respective section.
+
+Please, answer all sub-questions and embed all the figures within the document (you can save them as pdf and then import them into word)
+ 
+#### Part 1: Central Limit Theorem
+The average number of homicides per census tract in Philadelphia County for 2021 is 40 with a standard deviation of 5. The distribution of homicides was normal. 
+
+Based on this information answer the questions below. 
+
+Hint: for some of the questions you might have to compute/use Standard Error of Mean (i.e. the standard deviation of the sampling distribution of means). If need be you can google for help and find material like this: https://www.statisticshowto.com/probability-and-statistics/normal-distributions/central-limit-theorem-definition-examples/ 
+
+a.	What is the probability that a randomly selected census tract witnessed 45 or more homicides in Philadelphia last year? Show the code and add a probability graph that includes a vertical line with the number of homicides and a horizontal line with the probability level assigned to this value.
+
+b.	What is the probability that the average number of homicides of 20 randomly selected tracts was 45 or more? Show work. Add a probability graph and include a vertical line representing the number of homicides and a horizontal line representing the probability level associated to this number.
+
+c.	Is your answer for #b way smaller than your answer for #a? If so, why?
+
+d.	What is the probability that the average number of homicides of 20 randomly selected tracts was between 35 and 45? Show work. Add a probability graph and include two vertical lines representing the range of values in homicides associated to this probability
+
+e.	Is your answer for this # very big compared to your answer for #b? By how much?    
+
+#### Part2: Confidence Interval of Means
+
+To estimate the average age of NFL players, a research group randomly surveyed 200 NFL players from different teams in 2020. The values below represent the age ranges(Age) and the number of individuals sampled for each age range(Counts)
+
+Age:	15-20, 20-25, 25-30, 30-35, 35-40
+
+Counts:35, 38, 48, 45, 34
+
+Now, construct the 98% Confidence Interval for the average age of the NFL players (include your code and a probabilty figure representing the range of ages representing the calculated confidence intervals ). 
+
+Hints: 
+
+-First, calculate the mean and SD from the sample (above table). You can check how to do that here: https://www.statology.org/histogram-standard-deviation/   
+
+-Determine whether you should use z-distribution or t-distribution. 
+
+-Next, find the appropriate formula. Find the correct t-value or z-value for your significance level of 98% (two-tailed). Calculate the Standard Error and z value. 
+
+-Finally, come up with the CI of the mean. 
+
+-Show the code used and also a graph representing the probability curve that includes two vertical lines representing the ages associated with the lower and higher bounds of the confidence levels.
+
+-Write your interpretation stating what your CI means.
+
+How does your result compare when you consider a 90% confidence interval? How do you interpret the differences?
+
+Can you use 100% confidence interval? Try inputting 1 or - as the CI. What value do you get in R and why?
+
+#### Part 3: CI of Proportion
+Suppose, 54% of 500 surveyed respondents said that they voted Biden in the 2020 election. Calculate the 97% confidence interval of Americans who voted for Biden.

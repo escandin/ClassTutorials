@@ -1,0 +1,183 @@
+---
+title: 'Spatial Analysis. Lab Week 9: Hypothesis testing for qualitative data'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/IntroStatsCode/StatsLab1Images"
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+setwd(wd)
+fig1path=paste(wd, "Fig1Lab4.png", sep="/")
+fig2path=paste(wd, "Fig2Lab5.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+## Lab due
+March 22 2023
+
+## Goal
+At the end of this lab, students will know:
+
+-How to implement a hypothesis test for qualitative data
+
+-When to implement a test of proportions vs a chi-square test
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+##### Reference data
+For this lab we will use again survey data from the American National Election Studies (ANES). 
+
+You can download the .csv file associated to this dataset from the module "Datasets" in canvas. Please read the description and access the links to become familiar with the dataset.
+
+#### Setting up the environment and uploading the data
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/Stats/Datasets")
+setwd(wd)
+anes=read.csv("anes_2020ets.csv")
+```
+
+In some cases, the ANES dataset divides the sample in two groups in order to ask slightly different versions of the same question. The name of the field is "form". For the purpose of this lab, we will select a subset of data for the group with a value in the variable "form" equal to 1.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anes1=anes[which(anes$form==1),]
+rm(anes) # we will remove this object because it won't be used for the rest of the lab.
+```
+
+### PART 1: HYPOTHESIS TESTING FOR PROPORTIONS
+
+For this excercise, we will investigate whether there is a difference in opinion among latino and non-latino populations about whether transgender people should serve in the military.
+
+1. Question : Is there a differences among latino and non-latino people about whether transgender people should serve in the military?
+
+2. Variables: transmilit1a defines whether the opinion about transgender people serving in the military is yes (1) or no (2)
+
+3.  H0: P.latino = P.others
+    HA: P.latino != P.others
+
+4. Since we are comparing responses by two groups, we will perform a test of proportions.
+
+5. Test implementation: In order to implement the test, we need to select the variables and make sure there are no missing values
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(anes1$transmilit1a) #
+summary(anes1$latin1)
+```
+
+Notice that the maximum value for the variable "transmilit1a" is 9 but that the options in the questionnaire are 1, 2. We will assume that those are missing values and therefore remove them from the database
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+anes1$transmilit1a[anes1$transmilit1a==9]=NA
+summary(anes1$transmilit1a)
+```
+
+Then we will create a dataframe with only the two variables of interest and remove any rows with missing observations 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datasubset=data.frame(cbind(anes1$latin1, anes1$transmilit1a))
+datasubset=subset(datasubset, complete.cases(datasubset))
+summary(datasubset)
+names(datasubset)=c("transmil", "latino") # add a column name to the variables
+```
+
+To implement the test, we use the function p.test(). Let's first create a contingency table
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+contab=table(datasubset$latino, datasubset$transmil)
+contab
+```
+
+In this case, rows correspond to whether the person is latino or not and the columns are whether they are in favor or not of having transgender people serving in the military. Let's add labels to rows and columns
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rownames(contab)=c("latino", "other")
+colnames(contab)=c("transyes","transno")
+contab
+```
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+?prop.test
+prop.test(x = c(contab[1,1], contab[2,1]), n = c(sum(contab[1,]), sum(contab[2,]))) #!!!!!
+```
+
+6. Interpret the results and draw conclusions: the results offer support towards the alternative hypothesis that there are differences in the support for transgender people serving in the military among latino vs non-latino people. The proportions suggest that there is higher support among latino people.
+
+### PART 2: CHI-SQUARE TEST
+For this excercise we will investigate whether someone's marital status has an influence on house tenure. For this purpose, we will use two variables, also from ANES
+
+The first variable on marital status (marital1) has five possible answers:
+1. Married
+2. Widowed
+3 Divorced
+4. Separated
+5. Never Married
+
+The second variable on house tenure (home_anes) has four possible answers:
+1. Pay rent
+2. pay mortgage
+3. Own home with no payments due
+4. Some other arrangement
+
+Let's explore the statistics of these variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+summary(anes1$marital1)
+summary(anes1$home_anes)
+```
+
+There seem to be no values out of range, so let's create the contingency table
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+contab2=table(anes1$marital1, anes1$home_anes)
+contab2
+chisq.test(contab2)
+```
+
+You will notice that there is a warning message saying that the chi square approximation may be incorrect. That is because one of the rows (corresponding to separated) have too few observations. In this case, we have to options. 
+
+The first one is to simulate the p.value using a re-sampling approach. 
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+chisq.test(contab2, simulate.p.value=TRUE)
+```
+
+The other option is to disregard that row and consider only the other possible responses
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+contab2.mod=contab2[c(1:3,5),] # row 4 is eliminated
+contab2.mod
+chisq.test(contab2.mod)
+```
+
+You can see that the results are very similar to the ones obtained using the simulate.p.value option
+
+Conclusion: There is strong evidence that marital status has an influence on house tenure.
+
+## Lab deliverables
+
+The excercises below are also based on the data available in the ANES dataset. For each one of them, please include in your report:
+
+1. The question
+2. The type of test to implement
+3. The test results and based on those results, and
+4. The conclusion drawn based on the results 
+
+#### Excercise: 1
+Use the data about political affiliation (pid1r) and prefered qualities over children associated to curiosity vs good manners (childrear2]) to assess whether political affiliation to democrats or republicans influence the preferred quality toward children.
+
+Tips: 1. Make sure to identify and remove unvalid data (values =9) adapting the steps in part 1 of the lab.
+
+2. Here, you will have to select a subset of the data that corresponds only to republicans (1) and democrats (2). Supposing that you name the variable corresponding to political affiliation as "affiliation" in the data subset, you can select respondents that are either republicans or democrats by using the line of code below:
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+datasubset=datasubset[datasubset$affiliation<=2,]
+```
+
+#### Excercise: 2
+Use the variables associated with people's perceptions about the role of government in society (govsize1a) and home tenure (home_anes) to assess whether there are differences on people's perception about the role of government based on their home tenure status?

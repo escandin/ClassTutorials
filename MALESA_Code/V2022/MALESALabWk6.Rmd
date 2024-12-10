@@ -1,0 +1,162 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 6: Exploratory Data Analysis (EDA)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goal
+To learn how to perform exploratory data analysis.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use the mosquito data that we 
+
+Have fun!
+
+### 1. System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week6")
+setwd(wd)
+library(terra)
+library(sf)
+library(DataExplorer)
+library(GGally)
+library(dplyr)
+```
+
+#### Load files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+load("alldata.RData")
+```
+
+#### Preparing the data
+Before exploring the data, let's create a binary column representing mosquito presences/absences.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+alldata$PRESENCE=alldata$ADULTS
+alldata$PRESENCE[alldata$PRESENCE>0]=1
+alldata$PRESENCE=as.factor(alldata$PRESENCE)
+```
+
+#### Identify the structure of the data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+str(alldata)
+plot_str(alldata)
+summary(alldata)
+head(alldata)
+```
+
+#### Identify and remove observations with missing values and data duplicates
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+nrow(alldata)
+alldata=subset(alldata, complete.cases(alldata))
+nrow(alldata)
+
+# Identify and remove duplicates
+dups=duplicated(alldata)
+alldata[dups,]
+nrow(alldata)
+alldata=alldata[!dups,]
+nrow(alldata)
+```
+
+#### Explore the characteristics of individual variables
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(alldata)
+datasubset=alldata[,c(2, 6:10, 13:33)]
+plot_bar(datasubset)
+plot_qq(datasubset)
+plot_density(datasubset)
+plot_prcomp(datasubset[,c(2,3, 7:24)], nrow=2L, ncol=2L)
+
+```
+
+#### Check interactions between pairs of data 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+cormat=cor(datasubset[,c(2, 3, 7:20, 22:26)], use="complete.obs", method="pearson")
+plot_correlation(datasubset)
+
+pairs(datasubset[,c(7:13)])
+
+panel.hist <- function(x, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5))
+    his <- hist(x, plot = FALSE)
+    breaks <- his$breaks
+    nB <- length(breaks)
+    y <- his$counts
+    y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = rgb(0, 1, 1, alpha = 0.5), ...)
+    # lines(density(x), col = 2, lwd = 2) # Uncomment to add density lines
+}
+pairs(datasubset[,c(7:13)], upper.panel = NULL,
+      diag.panel = panel.hist)
+plot_bar(datasubset, by="PRESENCE")
+```
+
+#### Plot data interactions per groups
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+options(repr.plot.width = 20, repr.plot.height = 10)
+alldata %>% 
+  select("roughness", "tmea", "income", "latino", "TRI") %>%
+  ggpairs(mapping = aes(color = alldata$PRESENCE, alpha = 0.5))
+
+boxplot(income~PRESENCE,data=alldata, main="income per mosquito presence", 
+   xlab="presence/absence", ylab="income")
+
+boxplot(TRI~PRESENCE,data=alldata, main="TRI per mosquito presence", 
+   xlab="presence/absence", ylab="TRI")
+
+pairs(datasubset[,c(7:13)],                     # Data frame of variables
+      labels = colnames(datasubset[,c(7:13)]),  # Variable names
+      pch = 21,                                 # Pch symbol
+      bg = rainbow(3)[datasubset$PRESENCE],     # Background color of the symbol (pch 21 to 25)
+      col = rainbow(3)[datasubset$PRESENCE],    # Border color of the symbol
+      main = "Iris dataset",                    # Title of the plot
+      row1attop = TRUE,                         # If FALSE, changes the direction of the diagonal
+      gap = 1,                                  # Distance between subplots
+      cex.labels = NULL,                        # Size of the diagonal text
+      font.labels = 1)                          # Font style of the diagonal text
+```
+
+#### Produce report
+Let's produce a report using the package "DataExplorer"
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+alldata %>%
+    create_report(
+      #output_file = paste("Report", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), sep=" - "),
+       # Some people reported a png() print error. So I chabged the line above for this one:
+      output_file = paste("Report"),
+        report_title = "EDA Report - Mosquito presence",
+        y = "PRESENCE"
+    )
+```
+

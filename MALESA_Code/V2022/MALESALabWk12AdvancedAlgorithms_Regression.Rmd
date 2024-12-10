@@ -1,0 +1,274 @@
+---
+title: 'Applied Machine Learning for Spatial Analysis. Lab Week 10: Advanced algorithms (supervised regression)'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Repositories/Gitrepo/MALESA_Code"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+library(ggplot2)  # For plotting
+library(png)      # For grabbing the dimensions of png files
+
+fig1path=paste(wd, "Fig1.png", sep="/")
+#fig2path=paste(wd, "Sel2Edit.png", sep="/")
+#fig3path=paste(wd, "Triangle.png", sep="/")
+#fig4path=paste(wd, "Fig4.png", sep="/")
+#fig1 = readPNG(fig1path)
+#fig2 = readPNG(fig2path)
+#fig3 = readPNG(fig3path)
+#fig4 = readPNG(fig4path)
+```
+
+## Goals
+To learn how to tune and validate a variety of supervised machine learning models.
+
+## Lab instructions
+1.	Launch R Studio and open a new R script: File/ New File/ R Script. Then save it as a new file: File/ Save As…
+2.	Read the instructions below step by step. Copy and paste each chunk of code at a time in your R script. Select the code with your mouse or shift/arrow keys and then run it by pressing the keys control-enter simultaneously.
+
+## Lab overview
+For this lab, we are going to use data from previous labs to calibrate and evaluated an array of ML algorithms and use them to produce spatial predictions.
+
+The code described below was adapted from the following sources:
+https://gist.github.com/hakimabdi/720f1481af9eca0b7b97d9856052e0e2 
+https://stackoverflow.com/questions/21662180/using-neuralnet-with-caret-train-and-adjusting-the-parameters 
+
+Have fun!
+
+### System setup
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+wd=("/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week12_AdvancedAlgorithms")
+setwd(wd)
+
+library(caret)
+library(terra)
+library(SpatialML)
+library(sf)
+#library(pdp)
+sourcedir="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/MALESA/2022Fall/Week10"
+```
+
+Load required files
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+load(paste0(sourcedir,"/refdata.RData"))
+names(refdata)
+refdata=refdata[,-2]
+```
+
+### Cross validation setup
+
+Partition data for calibration and validation
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+parts = createDataPartition(refdata$agb, p = .7, list = F)
+train = refdata[parts, ]
+test = refdata[-parts, ]
+```
+
+Standardize the data (required for neural networks, svm and others)
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+zscore=function(x){
+  zval=(x-mean(x, na.rm=TRUE))/sd(x, na.rm=TRUE)
+  return(zval)
+}
+
+trainx=data.frame(apply(train, 2, FUN=zscore))
+testx=data.frame(apply(test, 2, FUN=zscore))
+```
+
+Setup the parameters for the k-fold cross-validation that will be passed to the train() function.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tc <- trainControl(method = "repeatedcv", #  cross-validation method
+                   number = 5, # number of folds
+                   repeats = 3, # number of repeats
+                   allowParallel = TRUE, # allow multicore use
+                   verboseIter = TRUE) # view the training iterations
+```
+
+### Modeling
+Use the information associated all models available in caretto select the models to be used
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+names(getModelInfo())
+gnni=getModelInfo("neuralnet")
+gnni$neuralnet$type
+gnni$neuralnet$library
+modelLookup("neuralnet")
+```
+
+Specify grid for tunning each model
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Random forest
+grfi=getModelInfo("rf")
+grfi$rf$parameters
+rf.grid <- expand.grid(mtry=1:10) # number of variables available for splitting at each tree node
+
+# XGboost
+gxbi=getModelInfo("xgbTree")
+gxbi$xgbTree$parameters
+gbm.grid <-  expand.grid(max_depth = c(3, 5, 7), 
+                        nrounds = (1:10)*50,    # number of trees
+                        # default values below
+                        eta = 0.3,
+                        gamma = 0,
+                        subsample = 1,
+                        min_child_weight = 1,
+                        colsample_bytree = 0.6)
+
+# neuralnet
+gnni$neuralnet$parameters
+neunet.grid= expand.grid(layer1 = 10, layer2 = 10, layer3 = 10)
+
+# nnet
+grfi=getModelInfo("nnet")
+grfi$nnet$parameters
+nnet.grid = expand.grid(size = seq(from = 2, to = 10, by = 2), # number of neurons units in the hidden layer 
+                        decay = seq(from = 0.1, to = 0.5, by = 0.1)) # regularization parameter to avoid over-fitting 
+```
+
+Train models
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Random forest
+rf_model <- caret::train(x = train[,(2:ncol(train))], y = train$agb,
+                         method = "rf", metric="RMSE", trainControl = tc, tuneGrid = rf.grid)
+rf_model
+plot(rf_model)
+
+# XG boost
+xg_model = train(agb~., data = train, method = "xgbTree", metric="RMSE", 
+                 trainControl = tc, 
+                tuneGrid = gbm.grid)
+xg_model
+plot(xg_model)
+
+# neuralnet
+# If the algorithm does not converge, you can increase threshold or stepmax
+# https://stats.stackexchange.com/questions/183534/neural-network-model-does-not-converge 
+neunet_model <- caret::train(x = trainx[,(2:ncol(trainx))], y = trainx$agb, 
+  #formula.nps,
+  #data = training.set,
+  method = "neuralnet",
+  metric = "RMSE",
+  #threshold=0.02,
+  linear.output = TRUE, 
+  tuneGrid = neunet.grid, # cannot pass parameter hidden directly!!
+  trControl = tc)
+neunet_model
+
+# nnet
+nnet_model <- caret::train(x = trainx[,(2:ncol(trainx))], y = trainx$agb,
+                           method = "nnet", metric="RMSE",#"Accuracy", 
+                           trainControl = tc, tuneGrid = nnet.grid)
+nnet_model
+plot(nnet_model)
+```
+
+Produce performance metrics
+Use model to make predictions on test data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pred_rf = predict(rf_model, test)
+pred_xg = predict(xg_model, test)
+pred_neunet = predict(neunet_model, testx)
+pred_nnet = predict(nnet_model, testx)
+```
+
+De-standardize predictions based on the mean and sd obtained from training data
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+pred_neunet=pred_neunet*sd(train$agb)+mean(train$agb)
+pred_nnet=pred_nnet*sd(train$agb)+mean(train$agb)
+```
+
+Calculate accuracy estimates by comparing observed vs predicted values for response variable
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+test_y = test[, 1] 
+
+# rf
+sum(sqrt((test_y - pred_rf)^2))/length(test_y) #mae - Mean Absolute Error
+caret::RMSE(test_y, pred_rf) #rmse - Root Mean Squared Error
+
+# xgboost
+sum(sqrt((test_y - pred_xg)^2))/length(test_y) #mae - Mean Absolute Error
+caret::RMSE(test_y, pred_xg) #rmse - Root Mean Squared Error
+
+# neunet
+sum(sqrt((test_y - pred_neunet)^2))/length(test_y) #mae - Mean Absolute Error
+caret::RMSE(test_y, pred_neunet) #rmse - Root Mean Squared Error
+
+# nnet
+sum(sqrt((test_y - pred_nnet)^2))/length(test_y) #mae - Mean Absolute Error
+caret::RMSE(test_y, pred_nnet) #rmse - Root Mean Squared Error
+```
+
+### Make spatial predictions
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Upload datastack
+datastack = rast(paste0(sourcedir,"/datastack.tif"))
+names(datastack)==names(train)[2:ncol(train)]
+names(datastack)[7]=names(train[8])
+names(datastack)==names(train)[2:ncol(train)]
+
+# The size is to big for this so let's subset it
+plot(datastack[[15]])
+e=draw("extent")
+datastackrz=crop(datastack, e)
+plot(datastackrz[[1]])
+
+# convert datastack into dataframe
+datastackrzdf=as.matrix(datastackrz, mode="numeric")
+datastackrzdf=subset(datastackrzdf, complete.cases(datastackrzdf))
+colnames(datastackrzdf)[7]='vpdm.1'
+
+# Apply the models to the spatial data
+# Let's create a reference raster template
+refrast=sum(datastackrz)
+refrast[!is.na(refrast)] <- 1
+
+# Random forest
+rf_prediction = predict(rf_model, datastackrzdf)
+rf_rast=refrast
+rf_rast[!is.na(rf_rast)] <- rf_prediction
+plot(rf_rast)
+writeRaster(rf_rast, "rf_rast.tif")
+
+#  xg_boost
+xgb_prediction = predict(xg_model,datastackrzdf)
+xgb_rast=refrast
+xgb_rast[!is.na(xgb_rast)] <- xgb_prediction
+plot(xgb_rast)
+writeRaster(xgb_rast, "xgb_rast.tif")
+
+#  neunet
+# Standardize data first
+datastackrzdfx=data.frame(apply(datastackrzdf, 2, FUN=zscore))
+neunet_prediction = predict(neunet_model,datastackrzdfx)
+# Values need to be rescaled again
+neunet_prediction =neunet_prediction *sd(train$agb)+mean(train$agb)
+neunet_rast=refrast
+neunet_rast[!is.na(neunet_rast)] <- neunet_prediction
+plot(neunet_rast)
+writeRaster(neunet_rast, "neunet_rast.tif")
+
+#  nnet
+nnet_prediction = predict(nnet_model,datastackrzdfx)
+# Values need to be rescaled again
+nnet_prediction =nnet_prediction *sd(train$agb)+mean(train$agb)
+nnet_rast=refrast
+nnet_rast[!is.na(nnet_rast)] <- nnet_prediction
+plot(nnet_rast)
+writeRaster(nnet_rast, "nnet_rast.tif")
+```
+
+### Lab report
+
+This week's lab will be an expansion of the lab from previous weeks. Therefore it will count as the report from last and this week's lab (8 points in total).
+
+Adapt the code illustrated today to identify suitable values for hyperparameters associated with the application of the four models for the data in your final project.
+
+Based on your results, report the optimal parameters for both algorithms based on a validation analysis and add a figure that supports your selection.
+
+Perform an accuracy assessment for both algorithms using the test set and report your results. Based on your results, explain what algorithm produces the best performance.

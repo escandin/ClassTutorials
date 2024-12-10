@@ -1,0 +1,298 @@
+---
+title: 'Remote Sensing Lab 10: Unsupervised and Supervised classification'
+author: "Victor Gutierrez (victorhugo@temple.edu)"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+always_allow_html: yes
+---
+
+```{r include = FALSE}
+# Load screenshots
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2023Fall/Class10_Classification/Lab10Materials"
+setwd(wd)
+library(knitr)    # For knitting document and include_graphics function
+```
+
+## Lab due
+November 09, 2023
+
+## Goals
+1. To learn graphical approaches to assess class separability for land cover classification.
+2. To learn methods for unsupervised and supervised image classification and their implementation in R.
+
+## Total score
+The lab counts for up to 4 points towards the final grade of the course.
+
+## Lab instructions
+This lab assumes that some of the procedures learned in previous labs for downloading and pre-processing satellite images in R as well as deriving band transformations and spectral indices are already mastered and therefore are not covered here. Please refer to previous labs to implement such previous steps.
+
+1. Open R Studio and then a new R script. Copy and paste each chunk of the code below in your new R script and run it trying to understand the purpose, logic and syntaxis of each line. Make sure the code runs with no errors before moving to the next one.
+
+2.	Answer the questions in the answer sheet and submit your along with the required files to canvas.
+
+Have fun!
+
+## Lab overview
+For this lab we will perform an unsupervised classification using the k-means method. Then we will...
+
+### A. Unsupervised classification
+
+#### 1. Load required libraries and setup environment. 
+Use the function install.packages("") to install any unavailable libraries
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+library(terra)
+library(sf)
+library(randomForest)
+library(rgl)
+library(RColorBrewer)
+library(prettymapr)
+# library(raster)
+# library(rgdal)
+# library(RStoolbox)
+
+# library(stringr)
+
+wd="/Users/tug61163/Library/CloudStorage/OneDrive-TempleUniversity/Courses/IntroRemoteSensing/2023Fall/Class10_Classification/Lab10Materials"
+#wd="/Users/tug61163/Downloads/OneDrive_1_10-10-2023"
+setwd(wd)
+```
+
+#### 2. Load the data
+Open the images that you produced in the previous lab. These will be used as input variables for the classification.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+dir() # check that the files you need are in the directory
+L8name=rast("L8rsz.tif")
+#L8indices=rast("L8indices.tif")
+tassCap=rast("L8tascap.tif")
+tcnames=c("brightness", "greenness", "wetness" )
+names(tassCap)=tcnames
+#
+```
+
+#### 3.  Rescale the data
+K-means tends to create oblong objects and so it is not very good at handling data that comes at different scales. Therefore it is strongly adviced to re-scale all data.
+
+A common method to rescale the data is by transforming them into zscores. From basic statstics, a zscore represents how many standard deviations a single value is away from the mean. Therefore a zscore has a mean of zero and a standard deviation of one.
+
+We will create a function that converts values of a vector into zscores. It is a good practice to write functions at the beginning of the code.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+zscore=function(x){
+  zval=(x-mean(x))/sd(x)
+  return(zval)
+}
+```
+
+Then apply the function to all bands in the dataset. You can use the app() function from the terra package. Notice that it is enabled for multicore processing.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+tassCapZ=app(tassCap, fun=zscore, cores=5)
+tassCapZ
+```
+
+#### 4.  Perform an unsupervised classification. 
+As the number of classes, select the same number as the number classes considered in the collection of training polygons.
+
+If you receive this message "did not converge in 50 iterations ", it means that the algorithm didn't converge to a maximum. You still will probably obtain sensitive results but you might want to increase the parameter iter.max (eg. iter.max=100) and assess whether that improves the classification.
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+# Convert raster into dataframe
+df=as.data.frame(tassCapZ)
+
+clusters <- kmeans(df, centers=13, iter.max=50, nstart=5, algorithm="Lloyd")
+head(clusters$cluster)
+tail(clusters$cluster)
+```
+
+The object clusters corresponds to a list storing different types of information. For now, we are concerned about the object storing the cluster number assigned to all pixels analyzed: 
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+head(clusters$cluster)
+tail(clusters$cluster)
+```
+
+#### 5. Rasterize results and save files in your hardrive
+Let's obtain the coordinates of the analyzed pixels and use them to map the location of classified pixels.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+coord=terra::xyFromCell(tassCap,(as.numeric(rownames(df))))
+coord=data.frame(coord)
+names(coord)=c("x", "y")
+```
+
+Then create a copy of one of the layers of the original raster.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clustrast=tassCap[[1]]
+```
+
+Use the coordinates to assign to each pixel in the copy, the class number obtained from the cluster analysis.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+xypoints=st_as_sf(coord, coords=c("x", "y"), crs=st_crs("EPSG:32618"))
+xypoints=vect(xypoints)
+cellval=cells(clustrast, xypoints)
+clustrast[cellval[,2]]=clusters$cluster
+plot(clustrast)
+```
+
+Let's save the final raster and the results of the cluster analysis as a list. Let's also save the final classified raster as a tif file
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+clustlist=list(clustrast, clusters)
+save(clustlist, file='cluster_Lloyd.RData')
+writeRaster(clustrast, 'cluster_Lloyd.tif')
+```
+
+### B. Supervised classification
+#### 1 Upload training and satellite data
+Upload the shapefile representing the training polygons that you collected for different land cover classes in the previous lab.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+classes=st_read("Training_Pucallpa_2015_Sel.shp") 
+classes=vect(classes)
+```
+
+Test if the projection of the raster is different to the one of the training data. Project if they are different
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+crs(tassCap)==crs(classes)
+
+# If the result is FALSE, then reclassify
+classes=project(classes, tassCap)
+
+# Test the projection again
+crs(tassCap)==crs(classes)
+```
+
+#### 2. Extract the pixel values for each band in a dataframe
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+sampdata=terra::extract(tassCap, classes, xy=TRUE)
+
+# create a new row in the data frame to store the names of the land covers for the pixels in each polygon
+sampdata$LC=rep(NA, nrow(sampdata))
+for (i in 1: nrow(classes)){
+  sampdata$LC[which(sampdata$ID==i)]=rep(classes$CLASS_NAME[i], length(sampdata$LC[which(sampdata$ID==i)]))
+}
+
+# Remove any incomplete observations
+sampdata=subset(sampdata, complete.cases(sampdata))
+
+# reformat the colummn containing land cover classes as factor so that they are considered as categories
+sampdata$LC=as.factor(sampdata$LC)
+```
+
+#### 3. Visualize spectral space
+Load plotSpectra() function
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+plotSpectra=function(dataset=outdata, bandnames=c("B3_dn", "B4_dn", "B5_dn"),
+                     classfield=1, classlabels= sort(unique(dataset[,classfield])),
+                     classcol=sample(colors(), size=length(classlabels))){
+  #Assign colors to different labels
+  dataset=dataset[order(dataset[classfield]),]
+  cols=rep(NA, length(classlabels))
+  for (i in 1:length(classlabels)){
+    cols[which(dataset[,classfield]==classlabels[i])]=classcol[i]
+  }
+  
+  return(plot3d(dataset[,as.character(bandnames[1])],
+                dataset[, as.character(bandnames[2])], 
+                dataset[, as.character(bandnames[3])],
+                xlab=bandnames[1],
+                ylab=bandnames[2],
+                zlab=bandnames[3],
+                col=cols)) 
+  legend3d("topleft", legend = classlabels, 
+           pch = 16, col = classcol  , cex=1, inset=c(0.02))
+}
+```
+
+Produce the 3d plot by implementing the function.
+
+NOTE: If you are working with a Mac computer, you will need to have the XQuartz software installed in your computer. If it is not installed, you can download it from here: https://www.xquartz.org/
+
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+
+length(unique(sampdata$LC))
+
+# select palette of colors for plotting each land cover class
+display.brewer.all()
+display.brewer.pal(12, "Paired")
+classcolors= c(brewer.pal(n = 12, name = "Paired"),"gray")
+names(sampdata) 
+
+plotSpectra(dataset=sampdata, bandnames=tcnames, classfield=7,
+            classlabels=sort(unique(sampdata$LC)),
+            classcol=classcolors)
+
+# Make sure that the name in the legend coincides with the name of the column representing class names. In the example below is Class.ID
+legend3d("topleft", legend= sort(unique(sampdata$LC)),
+         col=classcolors, pch=3, cex=1, inset=c(0.02))
+
+```
+
+#### 4. Produce a supervised classification
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rf=randomForest(LC~brightness+greenness+wetness, data=sampdata, ntree=200, importance=TRUE)
+rf
+rf$importance
+varImpPlot(rf)
+```
+
+#### 5. Create map with predicted classes and save the model and the image to disk.
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+rfpred=terra::predict(tassCap, rf)
+plot(rfpred)
+
+save(rf, file="supervisedRF.RData")
+writeRaster(rfpred, "rfpred.tif")
+```
+
+### C. Map comparison
+Open both classification results in QGIS or any other GIS software. Use a high resolution base map to interpret the most likely land cover category for each cluster in the unsupervised classification map. Enter the names of the interpreted classes below in the "catnamesUnsup" object. Plot maps and figures including a legend, scale bar and north arrow and save them as a single pdf document
+```{r include = TRUE, message=F, warning=F, eval=FALSE}
+unsupercol=sample(colors(), 13) # These are the colors to be used for mapping the unsupervised map
+plot(clustrast, col=unsupercol, axes=FALSE, legend=T, box=FALSE)
+
+# Interpret the names of the classes in the unsupervised map and assign them to each category number below:
+catnamesUnsup=sort(c("Adolescent Oil Palm", "Bare Ground", "Lake", "Mature Oil Palm", "New Burn Scar", "Old Burn Scar", "Old Growth Forest", "Pasture",  "River", "Sand Banks", "Secondary Forest", "Urban", "Young Oil Palm"))
+
+levels(clustrast)=catnamesUnsup
+
+pdf("VGutierrezLab10.pdf", paper="USr", width=15)
+
+# PLOT THE UNSUPERVISED CLASSIFICATION
+# assign intuitive colors to the different classes. In this case, I will use the same colors as the supervised classification
+unsupercol=classcolors 
+plot(clustrast, col=unsupercol)
+# Add north arrow, scalebar.
+
+# PLOT THE SUPERVISED CLASSIFICATION
+# Retrieve the names of the different categories and 
+# the pixel values assigned to each one of them
+catnames=rf$classes
+catnames
+# This defines the colors to assign to each catname
+# The colors are assigned to each class are in the same order as they 
+# appear in catnames. Make sure the colors are intuitive
+#mapcol=c("pink", "green", "lightblue", "yellow", "blue", "gray", "red")
+
+plot(rfpred, col=classcolors)
+
+dev.off()
+```
+
+## Lab 9 deliverables
+
+1.	Add three X, Y, Z figures from different angles of the spectral space obtained through the application of the “plotSpectra()” function with the three bands that are best to discriminate between the land cover categories selected. Make sure the axes are at an angle that optimizes the visualization of the contrast in pixel values between categories (0.5 pts).
+
+2. Respond the questions below based on the visualization of the spectral space (0.3 pts):
+a. Which are the two land covers that you expect to be classified the most accurately? ___________________
+b. Which are the two land covers that you expect to be the most confused? _________________
+
+3. Upload in canvas a single pdf file with the map obtained from the unsupervised and supervised classifications.  (0.2 pts).
+
+4. Upload to canvas a single word document showing three zoomed-in images for one polygon per each land cover class. The first image corresponds to an RGB color composite from the original satellite image, the second one will be the results of the unsupervised classification and the third will be the results of the supervised classification. All the zoomed in images should include the outline of the polygon with no fill. You can produce these figures in QGIS or any other GIS software (1.2 pts).
+
+5. Based on your visual interpretation of the classification results, please indicate which type of classification (unsupervised vs supervised) represents best the land covers of interest (0.2 pts)____________ . 
+
+6. For the best classification results, please respond the questions below (0.6 pts):
+a. Which two land covers are best represented in your best classification (either supervised or unsupervised)? 
+b. Which two land covers have the worst representation?
+c. Do these results agree with the confusion that you identified based on the analysis of the spectral space (point 2)? 
+
+
